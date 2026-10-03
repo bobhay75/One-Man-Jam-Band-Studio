@@ -22,3 +22,15 @@ textarea{box-sizing:border-box;background:#0d0d0d;color:#eee;border:1px solid #4
 .region code{font-variant-numeric:tabular-nums}
 pre{white-space:pre-wrap;background:#0e0e0e;padding:12px;border-radius:10px;overflow:auto}
 .muted{opacity:.7}
+
+.neural-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.neural-grid label{display:grid;gap:6px}
+.neural-grid .wide{grid-column:1/-1}
+.neural-grid input{box-sizing:border-box;width:100%}
+.neural-stems{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.neural-stems article{background:#101010;border:1px solid #333;border-radius:10px;padding:10px}
+.neural-stems audio{min-height:38px}
+.neural-stems span{float:right;font-size:.9em;opacity:.72}
+.status{min-height:1.4em;margin-top:8px}
+.small{font-size:.9em}
+@media(max-width:700px){.neural-grid,.neural-stems{grid-template-columns:1fr}.neural-grid .wide{grid-column:auto}}
