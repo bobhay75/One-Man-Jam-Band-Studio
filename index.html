@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>One-Man Jam Band Studio</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<main class="shell">
+  <header>
+    <h1>One-Man Jam Band Studio</h1>
+    <p>Record. Tune. Analyze. Arrange. Mix. Master.</p>
+  </header>
+
+  <section class="panel">
+    <h2>Chromatic Tuner</h2>
+    <div id="note">--</div>
+    <div id="freq">0.0 Hz</div>
+    <div id="cents">0 cents</div>
+    <button id="startTuner">Start Tuner</button>
+    <button id="stopTuner" disabled>Stop Tuner</button>
+  </section>
+
+  <section class="panel">
+    <h2>Track Input</h2>
+    <input id="audioFile" type="file" accept="audio/*" />
+    <button id="recordBtn">Record</button>
+    <button id="stopRecordBtn" disabled>Stop</button>
+    <audio id="player" controls></audio>
+    <div id="meta"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Analysis</h2>
+    <button id="analyzeBtn" disabled>Analyze Track</button>
+    <pre id="analysis">Load or record a track to begin.</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Arrangement</h2>
+    <div class="grid">
+      <button data-stem="drums">Generate Drums</button>
+      <button data-stem="bass">Generate Bass</button>
+      <button data-stem="lead">Generate Lead</button>
+    </div>
+    <p class="muted">Stem generation is scaffolded. Local analysis and project state come first; remote AI render adapters plug in behind explicit user action.</p>
+  </section>
+</main>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
