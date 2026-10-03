@@ -41,16 +41,36 @@ function preparedEvents(arr,stem,project){
     seed:(arr.seed||1)+offset
   });
 }
-function scheduleStem(ctx,dest,arr,stem,project,rack){
+function scheduleProceduralStem(ctx,dest,arr,stem,project,rack){
   for(const e of preparedEvents(arr,stem,project)){
     if(stem==="drums")rack.scheduleDrum(dest,e);
     if(stem==="bass")rack.scheduleBass(dest,e);
     if(stem==="lead")rack.scheduleLead(dest,e);
   }
 }
-export async function renderProjectMix(sourceBuffer,project){
+function applyBlockedRegions(gainParam,regions=[]){
+  gainParam.setValueAtTime(1,0);
+  for(const r of regions){
+    const start=Math.max(0,Number(r.startSec)||0),end=Math.max(start,Number(r.endSec)||start),fade=.008;
+    if(end<=start)continue;
+    gainParam.setValueAtTime(1,Math.max(0,start-fade));
+    gainParam.linearRampToValueAtTime(0,start);
+    gainParam.setValueAtTime(0,end);
+    gainParam.linearRampToValueAtTime(1,end+fade);
+  }
+}
+function scheduleExternalStem(ctx,dest,buffer,regions=[]){
+  const src=ctx.createBufferSource(),gate=gainNode(ctx,1);src.buffer=buffer;applyBlockedRegions(gate.gain,regions);src.connect(gate).connect(dest);src.start(0);
+}
+export function stemRenderSource(stem,externalStems={}){
+  return externalStems?.[stem]?"neural":"procedural";
+}
+function renderDuration(sourceBuffer,arr,externalStems={}){
+  return Math.max(sourceBuffer.duration,arr.durationSec,...Object.values(externalStems||{}).filter(Boolean).map(b=>b.duration||0));
+}
+export async function renderProjectMix(sourceBuffer,project,externalStems={}){
   const arr=project.arrangement;if(!arr)throw new Error("Generate an arrangement first");
-  const sr=sourceBuffer.sampleRate,frames=Math.ceil(Math.max(sourceBuffer.duration,arr.durationSec)*sr),ctx=new OfflineAudioContext(2,frames,sr);
+  const sr=sourceBuffer.sampleRate,frames=Math.ceil(renderDuration(sourceBuffer,arr,externalStems)*sr),ctx=new OfflineAudioContext(2,frames,sr);
   const bus=gainNode(ctx,project.mix.masterGain??.9),wet=connectRoom(ctx,bus,project.mastering?.room??.12);
   wet.connect(ctx.destination);connectMastering(ctx,bus,ctx.destination,project.mastering?.preset||"natural");
 
@@ -59,15 +79,19 @@ export async function renderProjectMix(sourceBuffer,project){
   const stems={drums:gainNode(ctx,project.mix.drumsGain??.65),bass:gainNode(ctx,project.mix.bassGain??.6),lead:gainNode(ctx,project.mix.leadGain??.45)};
   for(const g of Object.values(stems))g.connect(bus);
   const rack=createInstrumentRack(ctx,project.production||{});
-  for(const name of Object.keys(stems))scheduleStem(ctx,stems[name],arr,name,project,rack);
+  for(const name of Object.keys(stems)){
+    if(externalStems?.[name])scheduleExternalStem(ctx,stems[name],externalStems[name],project.regions||[]);
+    else scheduleProceduralStem(ctx,stems[name],arr,name,project,rack);
+  }
   return peakProtect(await ctx.startRendering());
 }
-export async function renderProjectStem(sourceBuffer,project,stem){
+export async function renderProjectStem(sourceBuffer,project,stem,externalStems={}){
   const arr=project.arrangement;if(!arr)throw new Error("Generate an arrangement first");
-  const sr=sourceBuffer.sampleRate,frames=Math.ceil(Math.max(sourceBuffer.duration,arr.durationSec)*sr),ctx=new OfflineAudioContext(2,frames,sr),out=gainNode(ctx,.9);out.connect(ctx.destination);
+  const sr=sourceBuffer.sampleRate,frames=Math.ceil(renderDuration(sourceBuffer,arr,externalStems)*sr),ctx=new OfflineAudioContext(2,frames,sr),out=gainNode(ctx,.9);out.connect(ctx.destination);
   if(stem==="original"){const src=ctx.createBufferSource();src.buffer=sourceBuffer;src.connect(out);src.start(0)}
   else if(["drums","bass","lead"].includes(stem)){
-    const rack=createInstrumentRack(ctx,project.production||{});scheduleStem(ctx,out,arr,stem,project,rack);
+    if(externalStems?.[stem])scheduleExternalStem(ctx,out,externalStems[stem],project.regions||[]);
+    else {const rack=createInstrumentRack(ctx,project.production||{});scheduleProceduralStem(ctx,out,arr,stem,project,rack)}
   } else throw new Error("Unknown stem");
   return peakProtect(await ctx.startRendering());
 }
