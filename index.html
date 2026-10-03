@@ -33,6 +33,10 @@
     <button id="saveProjectBtn">Save Project</button>
     <audio id="player" controls></audio>
     <div id="meta"></div>
+    <h3>Waveform / Exclusion Editor</h3>
+    <p class="muted">Drag across the waveform to mark a section where generated drums, bass and lead must stay out.</p>
+    <canvas id="waveformCanvas" class="waveform" height="180" aria-label="Audio waveform editor"></canvas>
+    <div id="waveformStatus" class="muted"></div>
   </section>
 
   <section class="panel">
@@ -60,12 +64,43 @@
   </section>
 
   <section class="panel">
-    <h2>Chord-Aware Jam Sketch</h2>
-    <p class="muted">Builds local drums, bass and lead from detected or edited tempo/key/chord regions and respects no-accompaniment regions.</p>
-    <div class="row">
-      <label>Seed <input id="seed" type="number" value="1" min="1" step="1"></label>
-      <button id="arrangeBtn" disabled>Generate Drums + Bass + Lead</button>
+    <h2>Chord-Aware Jam Band</h2>
+    <p class="muted">Builds local drums, bass and expressive lead from detected or edited chords, with repeatable humanized timing and feel.</p>
+    <div class="production-grid">
+      <label>Drums
+        <select id="drumStyle">
+          <option value="studio">Studio</option>
+          <option value="loose">Loose</option>
+          <option value="brush">Brush</option>
+        </select>
+      </label>
+      <label>Bass
+        <select id="bassStyle">
+          <option value="round">Round</option>
+          <option value="picked">Picked</option>
+          <option value="woody">Woody</option>
+        </select>
+      </label>
+      <label>Lead
+        <select id="leadStyle">
+          <option value="clean">Clean</option>
+          <option value="blues">Blues</option>
+          <option value="ambient">Ambient</option>
+        </select>
+      </label>
+      <label>Humanize ms
+        <input id="timingMs" type="range" min="0" max="28" value="10" step="1">
+        <output>10</output>
+      </label>
+      <label>Swing
+        <input id="swingAmount" type="range" min="0" max=".6" value=".08" step=".01">
+        <output>0.08</output>
+      </label>
+      <label>Seed
+        <input id="seed" type="number" value="1" min="1" step="1">
+      </label>
     </div>
+    <button id="arrangeBtn" disabled>Generate Drums + Bass + Lead</button>
     <pre id="arrangement">Analyze a track first.</pre>
   </section>
 
