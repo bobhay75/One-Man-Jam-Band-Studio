@@ -38,13 +38,28 @@
   </section>
 
   <section class="panel">
-    <h2>Arrangement</h2>
-    <div class="grid">
-      <button data-stem="drums">Generate Drums</button>
-      <button data-stem="bass">Generate Bass</button>
-      <button data-stem="lead">Generate Lead</button>
+    <h2>Jam Sketch</h2>
+    <p class="muted">Creates a deterministic local backing arrangement from detected tempo/key. This is a production sketch—not yet chord-following AI.</p>
+    <div class="row">
+      <label>Seed <input id="seed" type="number" value="1" min="1" step="1"></label>
+      <button id="arrangeBtn" disabled>Generate Drums + Bass + Lead</button>
     </div>
-    <p class="muted">Stem generation is scaffolded. Local analysis and project state come first; remote AI render adapters plug in behind explicit user action.</p>
+    <pre id="arrangement">Analyze a track first.</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Mixer</h2>
+    <div class="mixer">
+      <label>Original <input data-mix="sourceGain" type="range" min="0" max="1.5" value="1" step=".01"><output>1.00</output></label>
+      <label>Drums <input data-mix="drumsGain" type="range" min="0" max="1.5" value=".65" step=".01"><output>0.65</output></label>
+      <label>Bass <input data-mix="bassGain" type="range" min="0" max="1.5" value=".6" step=".01"><output>0.60</output></label>
+      <label>Lead <input data-mix="leadGain" type="range" min="0" max="1.5" value=".45" step=".01"><output>0.45</output></label>
+      <label>Master <input data-mix="masterGain" type="range" min="0" max="1.2" value=".9" step=".01"><output>0.90</output></label>
+    </div>
+    <button id="renderBtn" disabled>Render Mix</button>
+    <button id="downloadBtn" disabled>Download WAV</button>
+    <audio id="mixPlayer" controls></audio>
+    <div id="renderStatus"></div>
   </section>
 </main>
 <script type="module" src="src/app.js"></script>
