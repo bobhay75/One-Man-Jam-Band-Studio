@@ -9,11 +9,15 @@ import { estimateTruePeak, estimateIntegratedLoudness } from "./loudness.js";
 import { addMuteRegion, removeRegion } from "./regions.js";
 import { serializeProject, deserializeProject } from "./persistence.js";
 import { buildWaveformPeaks, selectionToRegion, drawWaveform } from "./waveform.js";
+import { checkAceStep, submitLego, waitForTask, fetchGeneratedAudio, defaultCaption } from "./providers/acestep.js";
 
 let project = createProject();
 let audioCtx, analyser, micStream, raf;
 let loadedArrayBuffer = null, decodedBuffer = null, renderedBuffer = null, mixUrl = null, currentAudioName = null;
 let waveformPeaks = null, waveformDuration = 0, dragStartX = null;
+let neuralStemBuffers = {drums:null,bass:null,lead:null};
+let neuralStemUrls = {drums:null,bass:null,lead:null};
+let neuralAbort = null;
 let mediaRecorder = null, chunks = [];
 const $ = id => document.getElementById(id);
 
@@ -40,6 +44,33 @@ async function refreshWaveform(){
   $("waveformStatus").textContent=`${waveformDuration.toFixed(1)}s · drag to add a no-accompaniment region`;
 }
 function invalidateRender(){renderedBuffer=null;$("downloadBtn").disabled=true;revokeMix();$("renderStatus").textContent=""}
+function setAceBusy(busy){
+  $("aceCancelBtn").disabled=!busy;
+  $("aceCheckBtn").disabled=busy;
+  $("aceAllBtn").disabled=busy||!hasMatchingAudio();
+  document.querySelectorAll("[data-neural-generate]").forEach(b=>b.disabled=busy||!hasMatchingAudio());
+}
+function revokeNeuralUrl(stem){
+  if(neuralStemUrls[stem]){URL.revokeObjectURL(neuralStemUrls[stem]);neuralStemUrls[stem]=null}
+}
+function clearNeuralStem(stem){
+  neuralStemBuffers[stem]=null;revokeNeuralUrl(stem);
+  const audio=document.querySelector(`[data-neural-audio="${stem}"]`);audio?.removeAttribute("src");
+  const state=document.querySelector(`[data-neural-state="${stem}"]`);if(state)state.textContent="local";
+  const clear=document.querySelector(`[data-neural-clear="${stem}"]`);if(clear)clear.disabled=true;
+  invalidateRender();
+}
+function clearAllNeural(){
+  for(const stem of ["drums","bass","lead"])clearNeuralStem(stem);
+}
+function syncNeuralUi(){
+  for(const stem of ["drums","bass","lead"]){
+    const active=!!neuralStemBuffers[stem],state=document.querySelector(`[data-neural-state="${stem}"]`);
+    if(state)state.textContent=active?"neural":"local";
+    const clear=document.querySelector(`[data-neural-clear="${stem}"]`);if(clear)clear.disabled=!active;
+  }
+  setAceBusy(!!neuralAbort);
+}
 function invalidateArrangement(){
   project.arrangement=null;project.stems={drums:null,bass:null,lead:null};invalidateRender();
   $("renderBtn").disabled=true;$("exportStemsBtn").disabled=true;
@@ -91,6 +122,7 @@ function syncControls(){
   $("arrangeBtn").disabled=!(project.analysis&&matching);
   $("renderBtn").disabled=!(project.arrangement&&matching);
   $("exportStemsBtn").disabled=!(project.arrangement&&matching);
+  syncNeuralUi();
 }
 function downloadBlob(blob,name){
   const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
@@ -100,6 +132,53 @@ function downloadWav(buffer,suffix){downloadBlob(new Blob([audioBufferToWav(buff
 function setProduction(key,value){
   project.production={...(project.production||{}),[key]:value};invalidateRender();
   if(project.arrangement)$("arrangement").textContent=arrangementSummary();
+}
+function aceRuntime(){
+  return {endpoint:$("aceEndpoint").value.trim(),apiKey:$("aceApiKey").value};
+}
+function sourceAudioBlob(){
+  if(!loadedArrayBuffer)throw new Error("Load the source recording first.");
+  return new Blob([loadedArrayBuffer],{type:project.source?.type||"audio/wav"});
+}
+async function decodeGenerated(arrayBuffer){
+  audioCtx ||= new AudioContext();
+  return await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+}
+async function generateOneNeuralStem(stem,signal){
+  const {endpoint,apiKey}=aceRuntime(),analysis=project.analysis||{};
+  const caption=[$("acePrompt").value.trim(),defaultCaption(stem)].filter(Boolean).join(". ");
+  $("aceStatus").textContent=`Submitting neural ${stem}…`;
+  const submitted=await submitLego({
+    endpoint,apiKey,audioBlob:sourceAudioBlob(),stem,caption,
+    bpm:analysis.tempoBpm,key:analysis.keyEstimate?.key,seed:Number($("seed").value)||1,signal
+  });
+  $("aceStatus").textContent=`Neural ${stem} queued (${submitted.taskId.slice(0,8)}…).`;
+  const result=await waitForTask({
+    endpoint,apiKey,taskId:submitted.taskId,signal,
+    onProgress:p=>{$("aceStatus").textContent=`Neural ${stem}: server working · poll ${p.poll}`;}
+  });
+  $("aceStatus").textContent=`Downloading neural ${stem}…`;
+  const bytes=await fetchGeneratedAudio({endpoint,apiKey,file:result.file,signal});
+  const decoded=await decodeGenerated(bytes);
+  neuralStemBuffers[stem]=decoded;revokeNeuralUrl(stem);
+  const blob=new Blob([bytes],{type:"audio/wav"});neuralStemUrls[stem]=URL.createObjectURL(blob);
+  const audio=document.querySelector(`[data-neural-audio="${stem}"]`);if(audio)audio.src=neuralStemUrls[stem];
+  const state=document.querySelector(`[data-neural-state="${stem}"]`);if(state)state.textContent="neural";
+  const clear=document.querySelector(`[data-neural-clear="${stem}"]`);if(clear)clear.disabled=false;
+  invalidateRender();
+  return result;
+}
+async function runNeural(stems){
+  if(neuralAbort)throw new Error("A neural render is already running.");
+  neuralAbort=new AbortController();setAceBusy(true);
+  try{
+    for(const stem of stems)await generateOneNeuralStem(stem,neuralAbort.signal);
+    $("aceStatus").textContent=`Neural render complete: ${stems.join(", ")}. Neural stems now replace those local tracks in mix/export.`;
+  }catch(e){
+    $("aceStatus").textContent=e?.name==="AbortError"?"Neural render canceled.":`Neural render stopped: ${e.message}`;
+  }finally{
+    neuralAbort=null;setAceBusy(false);syncNeuralUi();
+  }
 }
 
 async function startTuner(){
@@ -114,7 +193,9 @@ $("startTuner").onclick=()=>startTuner().catch(e=>alert(e.message));$("stopTuner
 
 $("audioFile").onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;
+  const previousName=project.source?.name;
   loadedArrayBuffer=await file.arrayBuffer();decodedBuffer=null;renderedBuffer=null;currentAudioName=file.name;revokeMix();
+  if(previousName&&previousName!==file.name)clearAllNeural();
   const reopening=project.source?.localAudioRequired&&project.source?.name===file.name;
   if(reopening)project.source={...project.source,type:file.type,size:file.size,originalPreserved:true};
   else project=setSource(project,{name:file.name,type:file.type,size:file.size});
@@ -126,7 +207,7 @@ $("audioFile").onchange=async e=>{
 $("projectFile").onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;
   try{
-    project=deserializeProject(await file.text());renderedBuffer=null;revokeMix();
+    project=deserializeProject(await file.text());renderedBuffer=null;revokeMix();clearAllNeural();
     if(currentAudioName!==project.source?.name){loadedArrayBuffer=null;decodedBuffer=null;currentAudioName=null;$("player").removeAttribute("src");clearWaveform()}
     $("meta").textContent=`Project loaded · source audio required: ${project.source?.name||"unknown"}`;syncControls();
     if(loadedArrayBuffer)await refreshWaveform();
@@ -139,7 +220,7 @@ $("recordBtn").onclick=async()=>{
   const stream=await navigator.mediaDevices.getUserMedia({audio:true});mediaRecorder=new MediaRecorder(stream);chunks=[];
   mediaRecorder.ondataavailable=e=>chunks.push(e.data);
   mediaRecorder.onstop=async()=>{
-    const blob=new Blob(chunks,{type:mediaRecorder.mimeType||"audio/webm"});loadedArrayBuffer=await blob.arrayBuffer();decodedBuffer=null;renderedBuffer=null;currentAudioName="recording";revokeMix();
+    const blob=new Blob(chunks,{type:mediaRecorder.mimeType||"audio/webm"});loadedArrayBuffer=await blob.arrayBuffer();decodedBuffer=null;renderedBuffer=null;currentAudioName="recording";revokeMix();clearAllNeural();
     $("player").src=URL.createObjectURL(blob);project=setSource(project,{name:"recording",type:blob.type,size:blob.size});
     $("meta").textContent=`New recording · ${Math.round(blob.size/1024)} KB · original preserved`;stream.getTracks().forEach(t=>t.stop());syncControls();await refreshWaveform();
   };
@@ -206,7 +287,7 @@ $("roomAmount").oninput=e=>{project.mastering.room=Number(e.target.value);e.targ
 $("renderBtn").onclick=async()=>{
   try{
     $("renderStatus").textContent="Rendering expressive local band…";const decoded=await decodeCurrent();
-    renderedBuffer=await renderProjectMix(decoded,project);
+    renderedBuffer=await renderProjectMix(decoded,project,neuralStemBuffers);
     const meter=measureAudioBuffer(renderedBuffer),channels=Array.from({length:renderedBuffer.numberOfChannels},(_,i)=>renderedBuffer.getChannelData(i));
     const tp=estimateTruePeak(channels),loud=estimateIntegratedLoudness(channels,renderedBuffer.sampleRate);
     const wav=audioBufferToWav(renderedBuffer),blob=new Blob([wav],{type:"audio/wav"});if(mixUrl)URL.revokeObjectURL(mixUrl);mixUrl=URL.createObjectURL(blob);$("mixPlayer").src=mixUrl;$("downloadBtn").disabled=false;
@@ -218,10 +299,21 @@ $("downloadBtn").onclick=()=>{if(renderedBuffer)downloadWav(renderedBuffer,"mix"
 $("exportStemsBtn").onclick=async()=>{
   try{
     $("renderStatus").textContent="Rendering 4 stems locally…";const decoded=await decodeCurrent();
-    for(const stem of ["original","drums","bass","lead"]){const b=await renderProjectStem(decoded,project,stem);downloadWav(b,stem)}
+    for(const stem of ["original","drums","bass","lead"]){const b=await renderProjectStem(decoded,project,stem,neuralStemBuffers);downloadWav(b,stem)}
     $("renderStatus").textContent="Stem renders complete. Your browser may ask permission for multiple downloads.";
   }catch(e){$("renderStatus").textContent=e.message}
 };
+
+$("aceCheckBtn").onclick=async()=>{
+  try{
+    const {endpoint,apiKey}=aceRuntime();$("aceStatus").textContent="Checking neural server…";
+    const result=await checkAceStep({endpoint,apiKey});$("aceStatus").textContent=`Neural server reachable at ${result.endpoint}.`;
+  }catch(e){$("aceStatus").textContent=`Neural server check failed: ${e.message}`}
+};
+$("aceAllBtn").onclick=()=>runNeural(["drums","bass","lead"]);
+document.querySelectorAll("[data-neural-generate]").forEach(btn=>btn.onclick=()=>runNeural([btn.dataset.neuralGenerate]));
+document.querySelectorAll("[data-neural-clear]").forEach(btn=>btn.onclick=()=>{clearNeuralStem(btn.dataset.neuralClear);$("aceStatus").textContent=`${btn.dataset.neuralClear} reverted to local renderer.`});
+$("aceCancelBtn").onclick=()=>neuralAbort?.abort();
 
 syncControls();
 clearWaveform();
