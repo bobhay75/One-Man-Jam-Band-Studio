@@ -3,16 +3,21 @@ body{margin:0;background:linear-gradient(#111,#090909);min-height:100vh}
 .shell{max-width:960px;margin:0 auto;padding:24px}
 header{margin-bottom:24px}
 .panel{background:#1b1b1b;border:1px solid #333;border-radius:14px;padding:18px;margin:16px 0;box-shadow:0 8px 30px #0005}
-button,input{font:inherit}
+button,input,select,textarea{font:inherit}
 button{padding:10px 14px;margin:6px 6px 6px 0;border-radius:10px;border:1px solid #555;background:#262626;color:#fff;cursor:pointer}
 button:hover:not(:disabled){background:#323232}
 button:disabled{opacity:.45;cursor:not-allowed}
-audio{display:block;width:100%;margin-top:12px}
+audio,textarea{display:block;width:100%;margin-top:12px}
+textarea{box-sizing:border-box;background:#0d0d0d;color:#eee;border:1px solid #444;border-radius:10px;padding:10px;font-family:ui-monospace,monospace}
 #note{font-size:64px;font-weight:700}
 #freq,#cents{font-size:18px}
-.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.row{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+.stack{display:grid;gap:10px}
 .mixer{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin:12px 0}
 .mixer label{display:grid;gap:6px;background:#121212;padding:10px;border-radius:10px}
 .mixer output{font-variant-numeric:tabular-nums;opacity:.8}
+.region-list{display:grid;gap:8px;margin-top:12px}
+.region{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#101010;border:1px solid #333;border-radius:10px;padding:9px 12px}
+.region code{font-variant-numeric:tabular-nums}
 pre{white-space:pre-wrap;background:#0e0e0e;padding:12px;border-radius:10px;overflow:auto}
 .muted{opacity:.7}
