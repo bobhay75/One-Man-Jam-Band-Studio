@@ -8,10 +8,12 @@ import { measureAudioBuffer } from "./meter.js";
 import { estimateTruePeak, estimateIntegratedLoudness } from "./loudness.js";
 import { addMuteRegion, removeRegion } from "./regions.js";
 import { serializeProject, deserializeProject } from "./persistence.js";
+import { buildWaveformPeaks, selectionToRegion, drawWaveform } from "./waveform.js";
 
 let project = createProject();
 let audioCtx, analyser, micStream, raf;
 let loadedArrayBuffer = null, decodedBuffer = null, renderedBuffer = null, mixUrl = null, currentAudioName = null;
+let waveformPeaks = null, waveformDuration = 0, dragStartX = null;
 let mediaRecorder = null, chunks = [];
 const $ = id => document.getElementById(id);
 
@@ -24,6 +26,19 @@ async function decodeCurrent(){
 }
 function hasMatchingAudio(){return !!loadedArrayBuffer&&(!project.source?.name||project.source.name===currentAudioName)}
 function revokeMix(){if(mixUrl){URL.revokeObjectURL(mixUrl);mixUrl=null}$("mixPlayer").removeAttribute("src")}
+function clearWaveform(){
+  waveformPeaks=null;waveformDuration=0;
+  const c=$("waveformCanvas"),ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
+  $("waveformStatus").textContent="Load audio to draw the waveform.";
+}
+async function refreshWaveform(){
+  if(!loadedArrayBuffer){clearWaveform();return}
+  const decoded=await decodeCurrent(),samples=decoded.getChannelData(0),canvas=$("waveformCanvas");
+  waveformDuration=decoded.duration;
+  waveformPeaks=buildWaveformPeaks(samples,Math.max(320,Math.min(1400,Math.round(canvas.clientWidth||800))));
+  drawWaveform(canvas,waveformPeaks,waveformDuration,project.regions||[]);
+  $("waveformStatus").textContent=`${waveformDuration.toFixed(1)}s · drag to add a no-accompaniment region`;
+}
 function invalidateRender(){renderedBuffer=null;$("downloadBtn").disabled=true;revokeMix();$("renderStatus").textContent=""}
 function invalidateArrangement(){
   project.arrangement=null;project.stems={drums:null,bass:null,lead:null};invalidateRender();
@@ -34,23 +49,39 @@ function renderRegions(){
   const host=$("regionList");host.textContent="";
   (project.regions||[]).forEach((r,i)=>{
     const row=document.createElement("div");row.className="region";
-    const label=document.createElement("span");label.innerHTML=`<code>${r.startSec.toFixed(2)}–${r.endSec.toFixed(2)}s</code> ${r.label||"No accompaniment"}`;
-    const btn=document.createElement("button");btn.textContent="Remove";btn.onclick=()=>{project=removeRegion(project,i);renderRegions();invalidateArrangement()};
+    const label=document.createElement("span"),code=document.createElement("code");
+    code.textContent=`${r.startSec.toFixed(2)}–${r.endSec.toFixed(2)}s`;
+    label.append(code,document.createTextNode(" "+(r.label||"No accompaniment")));
+    const btn=document.createElement("button");btn.textContent="Remove";
+    btn.onclick=()=>{project=removeRegion(project,i);renderRegions();invalidateArrangement()};
     row.append(label,btn);host.append(row);
   });
   if(!(project.regions||[]).length)host.textContent="No blocked regions.";
+  if(waveformPeaks)drawWaveform($("waveformCanvas"),waveformPeaks,waveformDuration,project.regions||[]);
 }
 function arrangementSummary(){
-  const a=project.arrangement;
-  if(!a)return "No arrangement generated.";
-  return JSON.stringify({bpm:a.bpm,key:a.key,bars:a.bars,chordAware:a.chordAware,chordRegions:project.analysis?.chordTimeline?.length||0,blockedRegions:project.regions?.length||0,events:project.stems,review:project.analysis?.speechReview?.status||"unknown"},null,2);
+  const a=project.arrangement;if(!a)return "No arrangement generated.";
+  const p=project.production||{};
+  return JSON.stringify({
+    bpm:a.bpm,key:a.key,bars:a.bars,chordAware:a.chordAware,
+    chordRegions:project.analysis?.chordTimeline?.length||0,
+    blockedRegions:project.regions?.length||0,
+    band:{drums:p.drumStyle,bass:p.bassStyle,lead:p.leadStyle,humanizeMs:p.timingMs,swing:p.swing},
+    events:project.stems,review:project.analysis?.speechReview?.status||"unknown"
+  },null,2);
 }
 function syncControls(){
+  project.production=project.production||{drumStyle:"studio",bassStyle:"round",leadStyle:"clean",timingMs:10,velocityJitter:.05,swing:.08};
   document.querySelectorAll("[data-mix]").forEach(input=>{
     const v=project.mix?.[input.dataset.mix]??Number(input.value);input.value=v;input.nextElementSibling.value=Number(v).toFixed(2);
   });
   $("masterPreset").value=project.mastering?.preset||"natural";
   $("roomAmount").value=project.mastering?.room??.12;$("roomAmount").nextElementSibling.value=Number($("roomAmount").value).toFixed(2);
+  $("drumStyle").value=project.production.drumStyle||"studio";
+  $("bassStyle").value=project.production.bassStyle||"round";
+  $("leadStyle").value=project.production.leadStyle||"clean";
+  $("timingMs").value=project.production.timingMs??10;$("timingMs").nextElementSibling.value=String(project.production.timingMs??10);
+  $("swingAmount").value=project.production.swing??.08;$("swingAmount").nextElementSibling.value=Number(project.production.swing??.08).toFixed(2);
   $("analysis").textContent=project.analysis?JSON.stringify(project.analysis,null,2):"Load or record a track to begin.";
   $("chordEditor").value=JSON.stringify(project.analysis?.chordTimeline||[],null,2);
   $("applyChordsBtn").disabled=!project.analysis;
@@ -66,6 +97,10 @@ function downloadBlob(blob,name){
 }
 function baseName(){return (project.source?.name||"jam").replace(/\.[^.]+$/,"")}
 function downloadWav(buffer,suffix){downloadBlob(new Blob([audioBufferToWav(buffer)],{type:"audio/wav"}),`${baseName()}-${suffix}.wav`)}
+function setProduction(key,value){
+  project.production={...(project.production||{}),[key]:value};invalidateRender();
+  if(project.arrangement)$("arrangement").textContent=arrangementSummary();
+}
 
 async function startTuner(){
   audioCtx ||= new AudioContext();micStream=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -85,21 +120,20 @@ $("audioFile").onchange=async e=>{
   else project=setSource(project,{name:file.name,type:file.type,size:file.size});
   $("player").src=URL.createObjectURL(file);
   $("meta").textContent=`${file.name} · ${Math.round(file.size/1024)} KB · ${reopening?"project source restored":"original preserved"}`;
-  syncControls();
+  syncControls();await refreshWaveform();
 };
 
 $("projectFile").onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;
   try{
-    const next=deserializeProject(await file.text());project=next;renderedBuffer=null;revokeMix();
-    if(currentAudioName!==project.source?.name){loadedArrayBuffer=null;decodedBuffer=null;currentAudioName=null;$("player").removeAttribute("src")}
+    project=deserializeProject(await file.text());renderedBuffer=null;revokeMix();
+    if(currentAudioName!==project.source?.name){loadedArrayBuffer=null;decodedBuffer=null;currentAudioName=null;$("player").removeAttribute("src");clearWaveform()}
     $("meta").textContent=`Project loaded · source audio required: ${project.source?.name||"unknown"}`;syncControls();
+    if(loadedArrayBuffer)await refreshWaveform();
   }catch(err){alert(err.message)}
 };
 
-$("saveProjectBtn").onclick=()=>{
-  downloadBlob(new Blob([serializeProject(project)],{type:"application/json"}),`${baseName()}.omjbs.json`);
-};
+$("saveProjectBtn").onclick=()=>downloadBlob(new Blob([serializeProject(project)],{type:"application/json"}),`${baseName()}.omjbs.json`);
 
 $("recordBtn").onclick=async()=>{
   const stream=await navigator.mediaDevices.getUserMedia({audio:true});mediaRecorder=new MediaRecorder(stream);chunks=[];
@@ -107,7 +141,7 @@ $("recordBtn").onclick=async()=>{
   mediaRecorder.onstop=async()=>{
     const blob=new Blob(chunks,{type:mediaRecorder.mimeType||"audio/webm"});loadedArrayBuffer=await blob.arrayBuffer();decodedBuffer=null;renderedBuffer=null;currentAudioName="recording";revokeMix();
     $("player").src=URL.createObjectURL(blob);project=setSource(project,{name:"recording",type:blob.type,size:blob.size});
-    $("meta").textContent=`New recording · ${Math.round(blob.size/1024)} KB · original preserved`;stream.getTracks().forEach(t=>t.stop());syncControls();
+    $("meta").textContent=`New recording · ${Math.round(blob.size/1024)} KB · original preserved`;stream.getTracks().forEach(t=>t.stop());syncControls();await refreshWaveform();
   };
   mediaRecorder.start();$("recordBtn").disabled=true;$("stopRecordBtn").disabled=false;
 };
@@ -133,12 +167,35 @@ $("addRegionBtn").onclick=()=>{
   renderRegions();invalidateArrangement();
 };
 
+const canvas=$("waveformCanvas");
+canvas.addEventListener("pointerdown",e=>{
+  if(!waveformPeaks||!waveformDuration)return;
+  const rect=canvas.getBoundingClientRect();dragStartX=e.clientX-rect.left;canvas.setPointerCapture?.(e.pointerId);
+  $("waveformStatus").textContent="Drag to the end of the section to block.";
+});
+canvas.addEventListener("pointerup",e=>{
+  if(dragStartX===null||!waveformDuration)return;
+  const rect=canvas.getBoundingClientRect(),endX=e.clientX-rect.left;
+  const region=selectionToRegion(dragStartX,endX,rect.width,waveformDuration,"Waveform exclusion");dragStartX=null;
+  if(region.endSec-region.startSec<.1){$("waveformStatus").textContent="Selection too short; drag a wider section.";return}
+  project=addMuteRegion(project,region.startSec,region.endSec,region.label);
+  $("regionStart").value=region.startSec;$("regionEnd").value=region.endSec;renderRegions();invalidateArrangement();
+  $("waveformStatus").textContent=`Blocked ${region.startSec.toFixed(2)}–${region.endSec.toFixed(2)}s.`;
+});
+window.addEventListener("resize",()=>{if(waveformPeaks)drawWaveform(canvas,waveformPeaks,waveformDuration,project.regions||[])});
+
 $("arrangeBtn").onclick=async()=>{
   const decoded=await decodeCurrent(),a=project.analysis,bpm=a?.tempoBpm||120,key=a?.keyEstimate?.key||"C major";
   project.arrangement=buildArrangement({bpm,durationSec:decoded.duration,key,seed:Number($("seed").value)||1,chordTimeline:a?.chordTimeline||[],muteRegions:project.regions||[]});
   project.stems={drums:{events:project.arrangement.drums.length},bass:{events:project.arrangement.bass.length},lead:{events:project.arrangement.lead.length}};
   $("arrangement").textContent=arrangementSummary();$("renderBtn").disabled=false;$("exportStemsBtn").disabled=false;invalidateRender();
 };
+
+$("drumStyle").onchange=e=>setProduction("drumStyle",e.target.value);
+$("bassStyle").onchange=e=>setProduction("bassStyle",e.target.value);
+$("leadStyle").onchange=e=>setProduction("leadStyle",e.target.value);
+$("timingMs").oninput=e=>{e.target.nextElementSibling.value=e.target.value;setProduction("timingMs",Number(e.target.value))};
+$("swingAmount").oninput=e=>{e.target.nextElementSibling.value=Number(e.target.value).toFixed(2);setProduction("swing",Number(e.target.value))};
 
 document.querySelectorAll("[data-mix]").forEach(input=>{
   input.oninput=()=>{project.mix[input.dataset.mix]=Number(input.value);input.nextElementSibling.value=Number(input.value).toFixed(2);invalidateRender()};
@@ -148,12 +205,12 @@ $("roomAmount").oninput=e=>{project.mastering.room=Number(e.target.value);e.targ
 
 $("renderBtn").onclick=async()=>{
   try{
-    $("renderStatus").textContent="Rendering locally…";const decoded=await decodeCurrent();
+    $("renderStatus").textContent="Rendering expressive local band…";const decoded=await decodeCurrent();
     renderedBuffer=await renderProjectMix(decoded,project);
     const meter=measureAudioBuffer(renderedBuffer),channels=Array.from({length:renderedBuffer.numberOfChannels},(_,i)=>renderedBuffer.getChannelData(i));
     const tp=estimateTruePeak(channels),loud=estimateIntegratedLoudness(channels,renderedBuffer.sampleRate);
     const wav=audioBufferToWav(renderedBuffer),blob=new Blob([wav],{type:"audio/wav"});if(mixUrl)URL.revokeObjectURL(mixUrl);mixUrl=URL.createObjectURL(blob);$("mixPlayer").src=mixUrl;$("downloadBtn").disabled=false;
-    $("renderStatus").textContent=`Rendered ${renderedBuffer.duration.toFixed(1)}s stereo WAV · peak ${meter.peakDb} dBFS · true-peak est. ${tp.dbTP} dBTP · loudness est. ${loud.lufs} LUFS · ${project.mastering.preset} master.`;
+    $("renderStatus").textContent=`Rendered ${renderedBuffer.duration.toFixed(1)}s stereo WAV · ${project.production.drumStyle}/${project.production.bassStyle}/${project.production.leadStyle} · peak ${meter.peakDb} dBFS · true-peak est. ${tp.dbTP} dBTP · loudness est. ${loud.lufs} LUFS.`;
   }catch(e){$("renderStatus").textContent=e.message}
 };
 $("downloadBtn").onclick=()=>{if(renderedBuffer)downloadWav(renderedBuffer,"mix")};
@@ -167,3 +224,4 @@ $("exportStemsBtn").onclick=async()=>{
 };
 
 syncControls();
+clearWaveform();
