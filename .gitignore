@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+*.wav
+*.mp3
+*.m4a
+*.flac
+projects/
+renders/
+tmp/
