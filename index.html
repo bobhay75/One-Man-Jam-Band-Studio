@@ -105,6 +105,49 @@
   </section>
 
   <section class="panel">
+    <h2>Neural Renderer — Optional</h2>
+    <p class="muted">ACE-Step 1.5 Lego mode can generate a higher-fidelity Drums, Bass, or Lead stem from your source recording. Nothing is sent anywhere until you click a neural-generation button.</p>
+    <div class="neural-grid">
+      <label>ACE-Step API
+        <input id="aceEndpoint" type="url" value="http://127.0.0.1:8001" autocomplete="off">
+      </label>
+      <label>API key — runtime only
+        <input id="aceApiKey" type="password" value="" autocomplete="off" placeholder="optional for localhost">
+      </label>
+      <label class="wide">Band direction
+        <textarea id="acePrompt" rows="3" spellcheck="true">Natural live band supporting an acoustic guitar performance. Preserve the player's timing and feel. Tasteful, restrained, no vocals.</textarea>
+      </label>
+    </div>
+    <div class="row">
+      <button id="aceCheckBtn">Check Neural Server</button>
+      <button id="aceAllBtn" disabled>Generate Neural Band</button>
+      <button data-neural-generate="drums" disabled>Neural Drums</button>
+      <button data-neural-generate="bass" disabled>Neural Bass</button>
+      <button data-neural-generate="lead" disabled>Neural Lead</button>
+      <button id="aceCancelBtn" disabled>Cancel</button>
+    </div>
+    <div id="aceStatus" class="status muted">Neural rendering is optional; the local band remains available.</div>
+    <div class="neural-stems">
+      <article>
+        <strong>Drums</strong> <span data-neural-state="drums">local</span>
+        <audio data-neural-audio="drums" controls></audio>
+        <button data-neural-clear="drums" disabled>Use Local Drums</button>
+      </article>
+      <article>
+        <strong>Bass</strong> <span data-neural-state="bass">local</span>
+        <audio data-neural-audio="bass" controls></audio>
+        <button data-neural-clear="bass" disabled>Use Local Bass</button>
+      </article>
+      <article>
+        <strong>Lead</strong> <span data-neural-state="lead">local</span>
+        <audio data-neural-audio="lead" controls></audio>
+        <button data-neural-clear="lead" disabled>Use Local Lead</button>
+      </article>
+    </div>
+    <p class="muted small">Security: remote endpoints must use HTTPS. The API key is kept only in this page session and is never saved into the project file or Git.</p>
+  </section>
+
+  <section class="panel">
     <h2>Mixer + Mastering</h2>
     <div class="mixer">
       <label>Original <input data-mix="sourceGain" type="range" min="0" max="1.5" value="1" step=".01"><output>1.00</output></label>
