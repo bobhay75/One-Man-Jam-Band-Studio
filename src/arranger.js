@@ -32,7 +32,14 @@ export function buildArrangement({bpm=120,durationSec=60,key="C major",seed=1,ch
       bass.push({time:t,duration:beat*.8,midi:36+root,velocity:.65,chord:chord.label});
       if(b===1||b===3){
         const chordTones=chord.mode==="minor"?[0,3,7,10]:[0,4,7,9],degree=chordTones[Math.floor(rnd()*chordTones.length)];
-        lead.push({time:t+beat*.25,duration:beat*.45,midi:60+((root+degree)%12),velocity:.36+rnd()*.08,chord:chord.label});
+        lead.push({
+          time:t+beat*.25,
+          duration:beat*(.38+rnd()*.14),
+          midi:60+((root+degree)%12),
+          velocity:.34+rnd()*.1,
+          bendSemitones:rnd()<.32?(rnd()<.7?1:2):0,
+          chord:chord.label
+        });
       }
     }
   }
