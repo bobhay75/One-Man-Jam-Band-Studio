@@ -23,28 +23,154 @@
   </section>
 
   <section class="panel">
-    <h2>Track Input</h2>
-    <input id="audioFile" type="file" accept="audio/*" />
+    <h2>Track + Project</h2>
+    <div class="stack">
+      <label>Audio <input id="audioFile" type="file" accept="audio/*" /></label>
+      <label>Project <input id="projectFile" type="file" accept=".json,.omjbs.json,application/json" /></label>
+    </div>
     <button id="recordBtn">Record</button>
     <button id="stopRecordBtn" disabled>Stop</button>
+    <button id="saveProjectBtn">Save Project</button>
     <audio id="player" controls></audio>
     <div id="meta"></div>
+    <h3>Waveform / Exclusion Editor</h3>
+    <p class="muted">Drag across the waveform to mark a section where generated drums, bass and lead must stay out.</p>
+    <canvas id="waveformCanvas" class="waveform" height="180" aria-label="Audio waveform editor"></canvas>
+    <div id="waveformStatus" class="muted"></div>
   </section>
 
   <section class="panel">
     <h2>Analysis</h2>
     <button id="analyzeBtn" disabled>Analyze Track</button>
     <pre id="analysis">Load or record a track to begin.</pre>
+    <details>
+      <summary>Edit detected chord timeline</summary>
+      <textarea id="chordEditor" rows="10" spellcheck="false">[]</textarea>
+      <button id="applyChordsBtn" disabled>Apply Chord Timeline</button>
+      <div id="chordStatus" class="muted"></div>
+    </details>
   </section>
 
   <section class="panel">
-    <h2>Arrangement</h2>
-    <div class="grid">
-      <button data-stem="drums">Generate Drums</button>
-      <button data-stem="bass">Generate Bass</button>
-      <button data-stem="lead">Generate Lead</button>
+    <h2>No-Accompaniment Regions</h2>
+    <p class="muted">Use this for speech, interruptions, count-ins, or any place where generated drums/bass/lead must stay out.</p>
+    <div class="row">
+      <label>Start s <input id="regionStart" type="number" min="0" step=".1" value="0"></label>
+      <label>End s <input id="regionEnd" type="number" min="0" step=".1" value="1"></label>
+      <label>Label <input id="regionLabel" type="text" value="No accompaniment"></label>
+      <button id="addRegionBtn">Add Region</button>
     </div>
-    <p class="muted">Stem generation is scaffolded. Local analysis and project state come first; remote AI render adapters plug in behind explicit user action.</p>
+    <div id="regionList" class="region-list"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Chord-Aware Jam Band</h2>
+    <p class="muted">Builds local drums, bass and expressive lead from detected or edited chords, with repeatable humanized timing and feel.</p>
+    <div class="production-grid">
+      <label>Drums
+        <select id="drumStyle">
+          <option value="studio">Studio</option>
+          <option value="loose">Loose</option>
+          <option value="brush">Brush</option>
+        </select>
+      </label>
+      <label>Bass
+        <select id="bassStyle">
+          <option value="round">Round</option>
+          <option value="picked">Picked</option>
+          <option value="woody">Woody</option>
+        </select>
+      </label>
+      <label>Lead
+        <select id="leadStyle">
+          <option value="clean">Clean</option>
+          <option value="blues">Blues</option>
+          <option value="ambient">Ambient</option>
+        </select>
+      </label>
+      <label>Humanize ms
+        <input id="timingMs" type="range" min="0" max="28" value="10" step="1">
+        <output>10</output>
+      </label>
+      <label>Swing
+        <input id="swingAmount" type="range" min="0" max=".6" value=".08" step=".01">
+        <output>0.08</output>
+      </label>
+      <label>Seed
+        <input id="seed" type="number" value="1" min="1" step="1">
+      </label>
+    </div>
+    <button id="arrangeBtn" disabled>Generate Drums + Bass + Lead</button>
+    <pre id="arrangement">Analyze a track first.</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Neural Renderer — Optional</h2>
+    <p class="muted">ACE-Step 1.5 Lego mode can generate a higher-fidelity Drums, Bass, or Lead stem from your source recording. Nothing is sent anywhere until you click a neural-generation button.</p>
+    <div class="neural-grid">
+      <label>ACE-Step API
+        <input id="aceEndpoint" type="url" value="http://127.0.0.1:8001" autocomplete="off">
+      </label>
+      <label>API key — runtime only
+        <input id="aceApiKey" type="password" value="" autocomplete="off" placeholder="optional for localhost">
+      </label>
+      <label class="wide">Band direction
+        <textarea id="acePrompt" rows="3" spellcheck="true">Natural live band supporting an acoustic guitar performance. Preserve the player's timing and feel. Tasteful, restrained, no vocals.</textarea>
+      </label>
+    </div>
+    <div class="row">
+      <button id="aceCheckBtn">Check Neural Server</button>
+      <button id="aceAllBtn" disabled>Generate Neural Band</button>
+      <button data-neural-generate="drums" disabled>Neural Drums</button>
+      <button data-neural-generate="bass" disabled>Neural Bass</button>
+      <button data-neural-generate="lead" disabled>Neural Lead</button>
+      <button id="aceCancelBtn" disabled>Cancel</button>
+    </div>
+    <div id="aceStatus" class="status muted">Neural rendering is optional; the local band remains available.</div>
+    <div class="neural-stems">
+      <article>
+        <strong>Drums</strong> <span data-neural-state="drums">local</span>
+        <audio data-neural-audio="drums" controls></audio>
+        <button data-neural-clear="drums" disabled>Use Local Drums</button>
+      </article>
+      <article>
+        <strong>Bass</strong> <span data-neural-state="bass">local</span>
+        <audio data-neural-audio="bass" controls></audio>
+        <button data-neural-clear="bass" disabled>Use Local Bass</button>
+      </article>
+      <article>
+        <strong>Lead</strong> <span data-neural-state="lead">local</span>
+        <audio data-neural-audio="lead" controls></audio>
+        <button data-neural-clear="lead" disabled>Use Local Lead</button>
+      </article>
+    </div>
+    <p class="muted small">Security: remote endpoints must use HTTPS. The API key is kept only in this page session and is never saved into the project file or Git.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Mixer + Mastering</h2>
+    <div class="mixer">
+      <label>Original <input data-mix="sourceGain" type="range" min="0" max="1.5" value="1" step=".01"><output>1.00</output></label>
+      <label>Drums <input data-mix="drumsGain" type="range" min="0" max="1.5" value=".65" step=".01"><output>0.65</output></label>
+      <label>Bass <input data-mix="bassGain" type="range" min="0" max="1.5" value=".6" step=".01"><output>0.60</output></label>
+      <label>Lead <input data-mix="leadGain" type="range" min="0" max="1.5" value=".45" step=".01"><output>0.45</output></label>
+      <label>Master <input data-mix="masterGain" type="range" min="0" max="1.2" value=".9" step=".01"><output>0.90</output></label>
+      <label>Room <input id="roomAmount" type="range" min="0" max=".5" value=".12" step=".01"><output>0.12</output></label>
+    </div>
+    <div class="row">
+      <label>Mastering
+        <select id="masterPreset">
+          <option value="natural">Natural</option>
+          <option value="warm">Warm</option>
+          <option value="open">Open</option>
+        </select>
+      </label>
+      <button id="renderBtn" disabled>Render Mix</button>
+      <button id="downloadBtn" disabled>Download Mix WAV</button>
+      <button id="exportStemsBtn" disabled>Export 4 Stems</button>
+    </div>
+    <audio id="mixPlayer" controls></audio>
+    <div id="renderStatus"></div>
   </section>
 </main>
 <script type="module" src="src/app.js"></script>
