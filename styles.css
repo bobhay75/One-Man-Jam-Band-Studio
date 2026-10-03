@@ -13,9 +13,10 @@ textarea{box-sizing:border-box;background:#0d0d0d;color:#eee;border:1px solid #4
 #freq,#cents{font-size:18px}
 .row{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
 .stack{display:grid;gap:10px}
-.mixer{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin:12px 0}
-.mixer label{display:grid;gap:6px;background:#121212;padding:10px;border-radius:10px}
-.mixer output{font-variant-numeric:tabular-nums;opacity:.8}
+.mixer,.production-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:12px 0}
+.mixer label,.production-grid label{display:grid;gap:6px;background:#121212;padding:10px;border-radius:10px}
+.mixer output,.production-grid output{font-variant-numeric:tabular-nums;opacity:.8}
+.waveform{display:block;width:100%;height:180px;background:#0d0d0d;border:1px solid #393939;border-radius:10px;touch-action:none;cursor:crosshair}
 .region-list{display:grid;gap:8px;margin-top:12px}
 .region{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#101010;border:1px solid #333;border-radius:10px;padding:9px 12px}
 .region code{font-variant-numeric:tabular-nums}
