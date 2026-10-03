@@ -1,0 +1,14 @@
+import {strict as assert} from "node:assert";
+import {normalizeEndpoint,neuralTrackName,buildInstruction,parseTaskEnvelope,parseTaskResult,defaultCaption} from "../src/providers/acestep.js";
+assert.equal(normalizeEndpoint("http://127.0.0.1:8001/"),"http://127.0.0.1:8001");
+assert.equal(normalizeEndpoint("https://gpu.example.com/api/"),"https://gpu.example.com/api");
+assert.throws(()=>normalizeEndpoint("http://gpu.example.com"));
+assert.equal(neuralTrackName("lead"),"guitar");
+assert.match(buildInstruction("bass"),/BASS/);
+assert.match(defaultCaption("drums"),/drums/);
+assert.deepEqual(parseTaskEnvelope({code:200,error:null,data:{task_id:"x"}}),{task_id:"x"});
+const pending=parseTaskResult({code:200,error:null,data:[{status:0}]});
+assert.equal(pending.done,false);
+const done=parseTaskResult({code:200,error:null,data:[{status:1,result:JSON.stringify([{file:"/v1/audio?path=x.wav",metas:{bpm:120},seed_value:"9"}])}]});
+assert.equal(done.done,true);assert.match(done.file,/v1\/audio/);assert.equal(done.meta.bpm,120);
+console.log("ACE-Step provider tests passed");
