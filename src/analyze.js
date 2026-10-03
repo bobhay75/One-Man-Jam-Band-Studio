@@ -27,6 +27,17 @@ export function inferKeyFromChroma(chroma){
  }
  return {key:best.key,confidence:+Math.max(0,best.score).toFixed(3)};
 }
+export function inferChordFromChroma(chroma){
+ if(!chroma||chroma.length!==12)return null;
+ const total=chroma.reduce((a,b)=>a+b,0)||1; let best={score:-Infinity,label:null,root:0,mode:"major"};
+ for(let root=0;root<12;root++)for(const mode of ["major","minor"]){
+   const third=(root+(mode==="major"?4:3))%12,fifth=(root+7)%12;
+   const chord=chroma[root]+chroma[third]+chroma[fifth];
+   const score=chord/total;
+   if(score>best.score)best={score,label:NOTE_NAMES[root]+(mode==="minor"?"m":""),root,mode};
+ }
+ return {...best,confidence:+best.score.toFixed(3)};
+}
 export function estimateTempo(samples,sampleRate){
  const hop=Math.max(64,Math.round(sampleRate*0.01)),env=[];
  for(let i=0;i<samples.length;i+=hop)env.push(frameRms(samples,i,hop));
@@ -35,14 +46,41 @@ export function estimateTempo(samples,sampleRate){
  for(let lag=min;lag<=max;lag++){let s=0;for(let i=lag;i<onset.length;i++)s+=onset[i]*onset[i-lag];if(s>best){best=s;bestLag=lag}}
  return bestLag?+(60/(bestLag*hop/sampleRate)).toFixed(1):null;
 }
+function goertzel(samples,start,length,sampleRate,freq){
+ const coeff=2*Math.cos(2*Math.PI*freq/sampleRate);let s0=0,s1=0,s2=0;
+ const end=Math.min(samples.length,start+length);
+ for(let i=start;i<end;i++){s0=samples[i]+coeff*s1-s2;s2=s1;s1=s0}
+ return Math.max(0,s1*s1+s2*s2-coeff*s1*s2);
+}
+function windowChroma(samples,sampleRate,start,length){
+ const bins=new Array(12).fill(0);
+ for(let midi=40;midi<=76;midi++){
+   const f=440*Math.pow(2,(midi-69)/12);
+   bins[midi%12]+=goertzel(samples,start,length,sampleRate,f);
+ }
+ return bins;
+}
 function coarseChroma(samples,sampleRate){
- const bins=new Array(12).fill(0),N=2048,step=4096,maxFrames=160;
- let frames=0; for(let start=0;start+N<samples.length&&frames<maxFrames;start+=step,frames++){
-  for(let midi=40;midi<=76;midi++){const f=440*Math.pow(2,(midi-69)/12),w=2*Math.PI*f/sampleRate;let re=0,im=0;
-   for(let n=0;n<N;n++){const x=samples[start+n];re+=x*Math.cos(w*n);im-=x*Math.sin(w*n)}
-   bins[midi%12]+=re*re+im*im;
-  }
- } return bins;
+ const out=new Array(12).fill(0),N=Math.min(4096,samples.length),step=Math.max(N,Math.floor(samples.length/120));
+ for(let start=0;start+N<=samples.length;start+=step){
+   const c=windowChroma(samples,sampleRate,start,N);for(let i=0;i<12;i++)out[i]+=c[i];
+ }
+ return out;
+}
+export function estimateChordTimeline(samples,sampleRate,{windowSec=1.5,stepSec=1.5}={}){
+ const N=Math.max(1024,Math.round(sampleRate*windowSec)),step=Math.max(512,Math.round(sampleRate*stepSec)),raw=[];
+ for(let start=0;start<samples.length;start+=step){
+   if(frameRms(samples,start,Math.min(N,samples.length-start))<0.01)continue;
+   const chord=inferChordFromChroma(windowChroma(samples,sampleRate,start,Math.min(N,samples.length-start)));
+   if(chord)raw.push({startSec:+(start/sampleRate).toFixed(2),endSec:+(Math.min(samples.length,start+step)/sampleRate).toFixed(2),chord:chord.label,confidence:chord.confidence,root:chord.root,mode:chord.mode});
+ }
+ const merged=[];
+ for(const r of raw){
+   const prev=merged.at(-1);
+   if(prev&&prev.chord===r.chord){prev.endSec=r.endSec;prev.confidence=+((prev.confidence+r.confidence)/2).toFixed(3)}
+   else merged.push({...r});
+ }
+ return merged;
 }
 export async function analyzeAudioBuffer(audioBuffer){
  const ch=audioBuffer.getChannelData(0); let peak=0,sum=0;
@@ -51,6 +89,6 @@ export async function analyzeAudioBuffer(audioBuffer){
  const regions=activityRegions(ch,audioBuffer.sampleRate);
  return {durationSec:+audioBuffer.duration.toFixed(2),sampleRate:audioBuffer.sampleRate,channels:audioBuffer.numberOfChannels,
  peak:+peak.toFixed(4),rms:+Math.sqrt(sum/ch.length).toFixed(4),tempoBpm:estimateTempo(ch,audioBuffer.sampleRate),
- keyEstimate:key,activityRegions:regions,
- speechReview:{status:"human-review-required",message:"Active regions are detected locally. Speech/music classification must be reviewed before accompaniment generation."}};
+ keyEstimate:key,chordTimeline:estimateChordTimeline(ch,audioBuffer.sampleRate),activityRegions:regions,
+ speechReview:{status:"human-review-required",message:"Chord/audio regions are inferred locally. Speech/music ambiguity must be reviewed before final accompaniment."}};
 }
