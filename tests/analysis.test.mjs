@@ -3,7 +3,7 @@ import {inferKeyFromChroma,inferChordFromChroma,activityRegions,estimateTempo} f
 
 const cmaj=[10,1,3,1,8,5,1,7,1,4,1,3];
 assert.match(inferKeyFromChroma(cmaj).key,/major/);
-const gChord=[1,0,1,0,1,0,0,9,0,0,0,7];
+const gChord=[0,0,7,0,0,0,0,9,0,0,0,8];
 assert.equal(inferChordFromChroma(gChord).label,"G");
 
 const sr=1000,x=new Float32Array(2000);for(let i=400;i<900;i++)x[i]=.2;
