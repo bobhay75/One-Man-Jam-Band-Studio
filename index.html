@@ -23,10 +23,14 @@
   </section>
 
   <section class="panel">
-    <h2>Track Input</h2>
-    <input id="audioFile" type="file" accept="audio/*" />
+    <h2>Track + Project</h2>
+    <div class="stack">
+      <label>Audio <input id="audioFile" type="file" accept="audio/*" /></label>
+      <label>Project <input id="projectFile" type="file" accept=".json,.omjbs.json,application/json" /></label>
+    </div>
     <button id="recordBtn">Record</button>
     <button id="stopRecordBtn" disabled>Stop</button>
+    <button id="saveProjectBtn">Save Project</button>
     <audio id="player" controls></audio>
     <div id="meta"></div>
   </section>
@@ -35,11 +39,29 @@
     <h2>Analysis</h2>
     <button id="analyzeBtn" disabled>Analyze Track</button>
     <pre id="analysis">Load or record a track to begin.</pre>
+    <details>
+      <summary>Edit detected chord timeline</summary>
+      <textarea id="chordEditor" rows="10" spellcheck="false">[]</textarea>
+      <button id="applyChordsBtn" disabled>Apply Chord Timeline</button>
+      <div id="chordStatus" class="muted"></div>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>No-Accompaniment Regions</h2>
+    <p class="muted">Use this for speech, interruptions, count-ins, or any place where generated drums/bass/lead must stay out.</p>
+    <div class="row">
+      <label>Start s <input id="regionStart" type="number" min="0" step=".1" value="0"></label>
+      <label>End s <input id="regionEnd" type="number" min="0" step=".1" value="1"></label>
+      <label>Label <input id="regionLabel" type="text" value="No accompaniment"></label>
+      <button id="addRegionBtn">Add Region</button>
+    </div>
+    <div id="regionList" class="region-list"></div>
   </section>
 
   <section class="panel">
     <h2>Chord-Aware Jam Sketch</h2>
-    <p class="muted">Builds a local backing from detected tempo, key and chord regions. Speech/music ambiguity is still surfaced for review before a final production pass.</p>
+    <p class="muted">Builds local drums, bass and lead from detected or edited tempo/key/chord regions and respects no-accompaniment regions.</p>
     <div class="row">
       <label>Seed <input id="seed" type="number" value="1" min="1" step="1"></label>
       <button id="arrangeBtn" disabled>Generate Drums + Bass + Lead</button>
@@ -55,6 +77,7 @@
       <label>Bass <input data-mix="bassGain" type="range" min="0" max="1.5" value=".6" step=".01"><output>0.60</output></label>
       <label>Lead <input data-mix="leadGain" type="range" min="0" max="1.5" value=".45" step=".01"><output>0.45</output></label>
       <label>Master <input data-mix="masterGain" type="range" min="0" max="1.2" value=".9" step=".01"><output>0.90</output></label>
+      <label>Room <input id="roomAmount" type="range" min="0" max=".5" value=".12" step=".01"><output>0.12</output></label>
     </div>
     <div class="row">
       <label>Mastering
@@ -65,7 +88,8 @@
         </select>
       </label>
       <button id="renderBtn" disabled>Render Mix</button>
-      <button id="downloadBtn" disabled>Download WAV</button>
+      <button id="downloadBtn" disabled>Download Mix WAV</button>
+      <button id="exportStemsBtn" disabled>Export 4 Stems</button>
     </div>
     <audio id="mixPlayer" controls></audio>
     <div id="renderStatus"></div>
