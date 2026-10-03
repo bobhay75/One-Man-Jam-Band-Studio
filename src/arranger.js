@@ -9,29 +9,35 @@ export function parseKey(key="C major"){
   const [name,mode="major"]=String(key).split(/\s+/);
   return {root:ROOTS[name]??0,mode:mode==="minor"?"minor":"major"};
 }
-export function buildArrangement({bpm=120,durationSec=60,key="C major",seed=1}={}){
+export function parseChord(label="C"){
+  const m=String(label).match(/^([A-G](?:#)?)(m)?$/);
+  if(!m)return {root:0,mode:"major"};
+  return {root:ROOTS[m[1]]??0,mode:m[2]?"minor":"major"};
+}
+function chordAt(time,timeline,fallback){
+  const hit=timeline?.find(r=>time>=r.startSec&&time<r.endSec);
+  return hit?{...parseChord(hit.chord),label:hit.chord}:{...fallback,label:null};
+}
+export function buildArrangement({bpm=120,durationSec=60,key="C major",seed=1,chordTimeline=[]}={}){
   const beat=60/Math.max(40,Math.min(220,bpm||120));
   const bars=Math.max(1,Math.ceil(durationSec/(beat*4)));
-  const {root,mode}=parseKey(key);
-  const prog=mode==="minor"?[0,8,3,10]:[0,7,9,5]; // i-VI-III-VII / I-V-vi-IV pitch classes
-  const rnd=seeded(seed);
-  const drums=[],bass=[],lead=[];
+  const keyInfo=parseKey(key),prog=keyInfo.mode==="minor"?[0,8,3,10]:[0,7,9,5];
+  const rnd=seeded(seed),drums=[],bass=[],lead=[];
   for(let bar=0;bar<bars;bar++){
-    const chordPc=(root+prog[bar%prog.length])%12;
+    const generic={root:(keyInfo.root+prog[bar%prog.length])%12,mode:keyInfo.mode};
     for(let b=0;b<4;b++){
-      const t=(bar*4+b)*beat;
-      if(t>=durationSec)break;
+      const t=(bar*4+b)*beat;if(t>=durationSec)break;
+      const chord=chordAt(t,chordTimeline,generic),root=chord.root;
       drums.push({time:t,duration:.08,kind:b===0||b===2?"kick":"snare",velocity:b===0?1:.8});
       drums.push({time:t,duration:.025,kind:"hat",velocity:.35});
-      const bt=t+beat/2;
-      if(bt<durationSec)drums.push({time:bt,duration:.02,kind:"hat",velocity:.25});
-      bass.push({time:t,duration:beat*.8,midi:36+chordPc,velocity:.65});
+      const half=t+beat/2;if(half<durationSec)drums.push({time:half,duration:.02,kind:"hat",velocity:.25});
+      bass.push({time:t,duration:beat*.8,midi:36+root,velocity:.65,chord:chord.label});
       if(b===1||b===3){
-        const scale=mode==="minor"?[0,3,5,7,10]:[0,2,4,7,9];
-        const degree=scale[Math.floor(rnd()*scale.length)];
-        lead.push({time:t+beat*.25,duration:beat*.45,midi:60+((root+degree)%12),velocity:.38});
+        const chordTones=chord.mode==="minor"?[0,3,7,10]:[0,4,7,9];
+        const degree=chordTones[Math.floor(rnd()*chordTones.length)];
+        lead.push({time:t+beat*.25,duration:beat*.45,midi:60+((root+degree)%12),velocity:.36+ rnd()*.08,chord:chord.label});
       }
     }
   }
-  return {bpm,beatSec:beat,bars,key,durationSec,drums,bass,lead,seed};
+  return {bpm,beatSec:beat,bars,key,durationSec,drums,bass,lead,seed,chordAware:chordTimeline.length>0};
 }
