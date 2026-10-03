@@ -1,13 +1,14 @@
 export function createProject() {
   return {
-    version: 2,
+    version: 3,
     createdAt: new Date().toISOString(),
     source: null,
     analysis: null,
     arrangement: null,
     regions: [],
     stems: { drums: null, bass: null, lead: null },
-    mix: { sourceGain: 1, drumsGain: .65, bassGain: .6, leadGain: .45, masterGain: .9 }
+    mix: { sourceGain: 1, drumsGain: .65, bassGain: .6, leadGain: .45, masterGain: .9 },
+    mastering:{preset:"natural"}
   };
 }
 export function setSource(project, source) {
