@@ -1,9 +1,13 @@
 import {strict as assert} from "node:assert";
-import {buildArrangement,parseKey} from "../src/arranger.js";
+import {buildArrangement,parseKey,parseChord} from "../src/arranger.js";
 assert.deepEqual(parseKey("G major"),{root:7,mode:"major"});
-const a=buildArrangement({bpm:120,durationSec:8,key:"G major",seed:7});
-assert.equal(a.bars,4);
+assert.deepEqual(parseChord("Em"),{root:4,mode:"minor"});
+const timeline=[{startSec:0,endSec:4,chord:"G"},{startSec:4,endSec:8,chord:"C"}];
+const a=buildArrangement({bpm:120,durationSec:8,key:"G major",seed:7,chordTimeline:timeline});
+assert.equal(a.bars,4);assert.equal(a.chordAware,true);
 assert.ok(a.drums.length>0&&a.bass.length>0&&a.lead.length>0);
 assert.ok(a.drums.every(e=>e.time<8));
-assert.deepEqual(a,buildArrangement({bpm:120,durationSec:8,key:"G major",seed:7}));
+assert.equal(a.bass[0].midi,43);
+assert.ok(a.bass.some(e=>e.chord==="C"));
+assert.deepEqual(a,buildArrangement({bpm:120,durationSec:8,key:"G major",seed:7,chordTimeline:timeline}));
 console.log("arranger tests passed");
