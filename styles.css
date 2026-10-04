@@ -40,3 +40,5 @@ pre{white-space:pre-wrap;background:#0e0e0e;padding:12px;border-radius:10px;over
 .status{min-height:1.4em;margin-top:8px}
 .small{font-size:.9em}
 @media(max-width:700px){.neural-grid,.neural-stems{grid-template-columns:1fr}.neural-grid .wide{grid-column:auto}.workflow-steps{grid-template-columns:repeat(2,1fr)}.track-head{display:none}.track-row{grid-template-columns:28px minmax(110px,1fr);gap:7px}.track-row input{grid-column:2}.track-row em{grid-column:2}.track-empty{grid-column:2}}
+
+.button{display:inline-block;padding:10px 14px;margin:6px 6px 6px 0;border-radius:10px;border:1px solid #555;background:#262626;color:#fff;cursor:pointer}.button:hover{background:#323232}.file-picker{touch-action:manipulation;-webkit-tap-highlight-color:transparent}

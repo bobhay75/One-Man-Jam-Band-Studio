@@ -25,6 +25,15 @@ test('boots with safe disabled states and keyboard-wired controls', async ({ pag
   await expect(page.locator('#waveformStatus')).toHaveText('Load audio to draw the waveform.');
 });
 
+test('visible Choose Audio File control directly targets the native audio picker', async ({ page }) => {
+  const picker = page.locator('#audioFile');
+  const action = page.locator('#quickImportBtn');
+  await expect(action).toHaveAttribute('for', 'audioFile');
+  await expect(picker).toHaveAttribute('type', 'file');
+  await expect(picker).toHaveAttribute('accept', 'audio/*');
+  await expect(action).toBeVisible();
+});
+
 test('local upload, analyze, arrange, render and five WAV downloads use browser audio', async ({ page }) => {
   // Merely entering neural settings must not opt in or contact the endpoint.
   await page.locator('#aceEndpoint').fill(NEURAL_ENDPOINT);

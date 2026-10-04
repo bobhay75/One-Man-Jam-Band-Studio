@@ -207,7 +207,7 @@ $("audioFile").onchange=async e=>{
   syncControls();await refreshWaveform();
 };
 
-quickImport?.addEventListener("click",()=>$("audioFile").click());
+quickImport?.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("audioFile").click()}});
 quickRecord?.addEventListener("click",()=>$("recordBtn").click());
 quickPlay?.addEventListener("click",()=>{const player=$("player");if(player.paused){player.play();quickPlay.textContent="Pause Take"}else{player.pause();quickPlay.textContent="Play Take"}});
 
