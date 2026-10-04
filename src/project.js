@@ -13,9 +13,9 @@ export function createProject() {
       drumStyle:"studio",
       bassStyle:"round",
       leadStyle:"clean",
-      timingMs:10,
+      timingMs:2,
       velocityJitter:.05,
-      swing:.08
+      swing:.02
     }
   };
 }

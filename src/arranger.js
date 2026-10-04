@@ -26,18 +26,25 @@ export function buildArrangement({bpm=120,durationSec=60,key="C major",seed=1,ch
       const t=(bar*4+b)*beat;if(t>=durationSec)break;
       if(isBlocked(t,muteRegions))continue;
       const chord=chordAt(t,chordTimeline,generic),root=chord.root;
-      drums.push({time:t,duration:.08,kind:b===0||b===2?"kick":"snare",velocity:b===0?1:.8});
-      drums.push({time:t,duration:.025,kind:"hat",velocity:.35});
-      const half=t+beat/2;if(half<durationSec&&!isBlocked(half,muteRegions))drums.push({time:half,duration:.02,kind:"hat",velocity:.25});
-      bass.push({time:t,duration:beat*.8,midi:36+root,velocity:.65,chord:chord.label});
+      // Four-on-the-floor kick/2-and-4 snare, with an eighth-note hat grid.
+      // Every event is derived from the same beat clock as the bass and lead.
+      if(b===0||b===2)drums.push({time:t,duration:.08,kind:"kick",velocity:b===0?1:.82});
+      if(b===1||b===3)drums.push({time:t,duration:.1,kind:"snare",velocity:.72});
+      drums.push({time:t,duration:.025,kind:"hat",velocity:.26});
+      const half=t+beat/2;
+      if(half<durationSec&&!isBlocked(half,muteRegions))drums.push({time:half,duration:.02,kind:"hat",velocity:.18});
+      bass.push({time:t,duration:beat*.72,midi:36+root,velocity:b===0?.72:.58,chord:chord.label});
+      if((b===1||b===3)&&t+beat*.5<durationSec&&!isBlocked(t+beat*.5,muteRegions)){
+        const fifth=(root+7)%12;bass.push({time:t+beat*.5,duration:beat*.36,midi:36+fifth,velocity:.42,chord:chord.label});
+      }
       if(b===1||b===3){
-        const chordTones=chord.mode==="minor"?[0,3,7,10]:[0,4,7,9],degree=chordTones[Math.floor(rnd()*chordTones.length)];
+        const chordTones=chord.mode==="minor"?[0,3,7,10]:[0,4,7,9],degree=chordTones[(bar+b)%chordTones.length];
         lead.push({
-          time:t+beat*.25,
-          duration:beat*(.38+rnd()*.14),
+          time:t+beat*.08,
+          duration:beat*.62,
           midi:60+((root+degree)%12),
-          velocity:.34+rnd()*.1,
-          bendSemitones:rnd()<.32?(rnd()<.7?1:2):0,
+          velocity:.24,
+          bendSemitones:0,
           chord:chord.label
         });
       }

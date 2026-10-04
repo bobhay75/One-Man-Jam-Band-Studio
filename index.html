@@ -10,16 +10,44 @@
 <main class="shell">
   <header>
     <h1>One-Man Jam Band Studio</h1>
-    <p>Record. Tune. Analyze. Arrange. Mix. Master.</p>
+    <p>Record your parts. Build a band. Mix it like a real session.</p>
   </header>
+
+  <section class="panel start-here">
+    <div class="eyebrow">START HERE</div>
+    <h2>Make a song in four moves</h2>
+    <div class="workflow-steps"><div><b>1</b><span>Record or choose a guitar track</span></div><div><b>2</b><span>Check the take</span></div><div><b>3</b><span>Add a tempo-locked band</span></div><div><b>4</b><span>Render and listen</span></div></div>
+    <div class="row start-actions"><button id="quickRecordBtn" class="primary" type="button">Record Guitar</button><button id="quickImportBtn" type="button">Choose Audio File</button><button id="quickPlayBtn" type="button" disabled>Play Take</button></div>
+    <p class="muted small">You do not need to understand waveform editing, chord JSON, or neural servers to make a first mix. Those are advanced tools below.</p>
+  </section>
 
   <section class="panel">
     <h2>Chromatic Tuner</h2>
-    <div id="note">--</div>
-    <div id="freq">0.0 Hz</div>
-    <div id="cents">0 cents</div>
+    <div class="tuner-card" aria-live="polite">
+      <div id="tunerStatus" class="tuner-status">PLAY A NOTE</div>
+      <div class="tuner-note-row"><span class="tuner-side tuner-flat">♭ FLAT</span><div id="note">--</div><span class="tuner-side tuner-sharp">SHARP ♯</span></div>
+      <div class="tuner-meter" role="img" aria-label="Tuner pitch meter"><div class="tuner-zone tuner-zone-flat"></div><div class="tuner-zone tuner-zone-center"></div><div class="tuner-zone tuner-zone-sharp"></div><div class="tuner-tick tick-left"></div><div class="tuner-tick tick-center"></div><div class="tuner-tick tick-right"></div><div id="tunerNeedle" class="tuner-needle"></div></div>
+      <div class="tuner-reading"><span id="freq">0.0 Hz</span><span id="cents">0 cents</span></div><div id="tunerTarget" class="tuner-target">Target: --</div>
+    </div>
     <button id="startTuner">Start Tuner</button>
     <button id="stopTuner" disabled>Stop Tuner</button>
+  </section>
+
+  <section class="panel">
+    <div class="eyebrow">SESSION CONSOLE</div>
+    <h2>8-Track Workspace</h2>
+    <p class="muted">A familiar track view: your original take plus backing parts. Empty lanes are ready for additional recordings.</p>
+    <div class="track-console" role="table" aria-label="Eight track workspace">
+      <div class="track-head" role="row"><span>Track</span><span>Part</span><span>Level</span><span>State</span></div>
+      <div class="track-row active" role="row"><b>1</b><span>Guitar / Original</span><input data-track-gain="sourceGain" type="range" min="0" max="1.5" value="1" step=".01" aria-label="Guitar level"><em id="trackState1">Waiting for a take</em></div>
+      <div class="track-row" role="row"><b>2</b><span>Drums</span><input data-track-gain="drumsGain" type="range" min="0" max="1.5" value=".65" step=".01" aria-label="Drums level"><em>Generated after analysis</em></div>
+      <div class="track-row" role="row"><b>3</b><span>Bass</span><input data-track-gain="bassGain" type="range" min="0" max="1.5" value=".6" step=".01" aria-label="Bass level"><em>Generated after analysis</em></div>
+      <div class="track-row" role="row"><b>4</b><span>Lead</span><input data-track-gain="leadGain" type="range" min="0" max="1.5" value=".45" step=".01" aria-label="Lead level"><em>Generated after analysis</em></div>
+      <div class="track-row empty" role="row"><b>5</b><span>Guitar Double</span><span class="track-empty">Empty — record a second part</span><em>Ready</em></div>
+      <div class="track-row empty" role="row"><b>6</b><span>Vocal</span><span class="track-empty">Empty — record a vocal</span><em>Ready</em></div>
+      <div class="track-row empty" role="row"><b>7</b><span>Harmony</span><span class="track-empty">Empty — record harmony</span><em>Ready</em></div>
+      <div class="track-row empty" role="row"><b>8</b><span>FX / Room</span><span class="track-empty">Empty — record texture</span><em>Ready</em></div>
+    </div>
   </section>
 
   <section class="panel">
@@ -28,7 +56,7 @@
       <label>Audio <input id="audioFile" type="file" accept="audio/*" /></label>
       <label>Project <input id="projectFile" type="file" accept=".json,.omjbs.json,application/json" /></label>
     </div>
-    <button id="recordBtn">Record</button>
+    <button id="recordBtn">Record Guitar</button>
     <button id="stopRecordBtn" disabled>Stop</button>
     <button id="saveProjectBtn">Save Project</button>
     <audio id="player" controls></audio>
@@ -65,7 +93,7 @@
 
   <section class="panel">
     <h2>Chord-Aware Jam Band</h2>
-    <p class="muted">Builds local drums, bass and expressive lead from detected or edited chords, with repeatable humanized timing and feel.</p>
+    <p class="muted">Builds a tempo-locked backing band from detected or edited chords. The grid stays tight by default; feel controls add only a small, deliberate amount of movement.</p>
     <div class="production-grid">
       <label>Drums
         <select id="drumStyle">
@@ -89,12 +117,12 @@
         </select>
       </label>
       <label>Humanize ms
-        <input id="timingMs" type="range" min="0" max="28" value="10" step="1">
-        <output>10</output>
+        <input id="timingMs" type="range" min="0" max="20" value="2" step="1">
+        <output>2</output>
       </label>
       <label>Swing
-        <input id="swingAmount" type="range" min="0" max=".6" value=".08" step=".01">
-        <output>0.08</output>
+        <input id="swingAmount" type="range" min="0" max=".35" value=".02" step=".01">
+        <output>0.02</output>
       </label>
       <label>Seed
         <input id="seed" type="number" value="1" min="1" step="1">
@@ -165,7 +193,7 @@
           <option value="open">Open</option>
         </select>
       </label>
-      <button id="renderBtn" disabled>Render Mix</button>
+      <button id="renderBtn" disabled>Render Studio Mix</button>
       <button id="downloadBtn" disabled>Download Mix WAV</button>
       <button id="exportStemsBtn" disabled>Export 4 Stems</button>
     </div>

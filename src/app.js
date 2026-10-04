@@ -1,4 +1,4 @@
-import { autoCorrelate, frequencyToNote, noteName, centsOff } from "./tuner.js";
+import { autoCorrelate, frequencyToNote, noteName, centsOff, tunerState } from "./tuner.js";
 import { createProject, setSource } from "./project.js";
 import { analyzeAudioBuffer } from "./analyze.js";
 import { buildArrangement } from "./arranger.js";
@@ -20,6 +20,7 @@ let neuralStemUrls = {drums:null,bass:null,lead:null};
 let neuralAbort = null;
 let mediaRecorder = null, chunks = [];
 const $ = id => document.getElementById(id);
+const quickRecord = $("quickRecordBtn"), quickImport = $("quickImportBtn"), quickPlay = $("quickPlayBtn");
 
 async function decodeCurrent(){
   if(decodedBuffer) return decodedBuffer;
@@ -118,6 +119,8 @@ function syncControls(){
   $("applyChordsBtn").disabled=!project.analysis;
   $("arrangement").textContent=arrangementSummary();renderRegions();
   const matching=hasMatchingAudio();
+  if(quickPlay)quickPlay.disabled=!loadedArrayBuffer;
+  const state1=$("trackState1");if(state1)state1.textContent=loadedArrayBuffer?(currentAudioName==="recording"?"Recorded take ready":"Imported take ready"):"Waiting for a take";
   $("analyzeBtn").disabled=!loadedArrayBuffer;
   $("arrangeBtn").disabled=!(project.analysis&&matching);
   $("renderBtn").disabled=!(project.arrangement&&matching);
@@ -185,10 +188,10 @@ async function startTuner(){
   audioCtx ||= new AudioContext();micStream=await navigator.mediaDevices.getUserMedia({audio:true});
   const source=audioCtx.createMediaStreamSource(micStream);analyser=audioCtx.createAnalyser();analyser.fftSize=2048;source.connect(analyser);
   const buf=new Float32Array(analyser.fftSize);
-  const tick=()=>{analyser.getFloatTimeDomainData(buf);const freq=autoCorrelate(buf,audioCtx.sampleRate);if(freq>0){const n=frequencyToNote(freq);$("note").textContent=noteName(n);$("freq").textContent=freq.toFixed(1)+" Hz";$("cents").textContent=centsOff(freq,n)+" cents"}raf=requestAnimationFrame(tick)};
+  const tick=()=>{analyser.getFloatTimeDomainData(buf);const freq=autoCorrelate(buf,audioCtx.sampleRate);const card=document.querySelector(".tuner-card");if(freq>0){const n=frequencyToNote(freq),name=noteName(n),cents=centsOff(freq,n),state=tunerState(cents),target=440*Math.pow(2,(n-69)/12);$("note").textContent=name;$("freq").textContent=freq.toFixed(1)+" Hz";$("cents").textContent=(cents>0?"+":"")+cents+" cents";$("tunerTarget").textContent=`Target: ${target.toFixed(1)} Hz`;$("tunerStatus").textContent=state==="in-tune"?"IN TUNE":state==="flat"?"TOO FLAT":"TOO SHARP";card.dataset.state=state;$("tunerNeedle").style.transform=`translateX(-50%) rotate(${Math.max(-42,Math.min(42,cents*.84))}deg)`}else{$("tunerStatus").textContent="PLAY A NOTE";card.dataset.state="waiting";$("tunerNeedle").style.transform="translateX(-50%) rotate(0deg)"}raf=requestAnimationFrame(tick)};
   tick();$("startTuner").disabled=true;$("stopTuner").disabled=false;
 }
-function stopTuner(){cancelAnimationFrame(raf);micStream?.getTracks().forEach(t=>t.stop());$("startTuner").disabled=false;$("stopTuner").disabled=true}
+function stopTuner(){cancelAnimationFrame(raf);micStream?.getTracks().forEach(t=>t.stop());$("startTuner").disabled=false;$("stopTuner").disabled=true;$("tunerStatus").textContent="PLAY A NOTE";document.querySelector(".tuner-card")?.setAttribute("data-state","waiting")}
 $("startTuner").onclick=()=>startTuner().catch(e=>alert(e.message));$("stopTuner").onclick=stopTuner;
 
 $("audioFile").onchange=async e=>{
@@ -203,6 +206,10 @@ $("audioFile").onchange=async e=>{
   $("meta").textContent=`${file.name} · ${Math.round(file.size/1024)} KB · ${reopening?"project source restored":"original preserved"}`;
   syncControls();await refreshWaveform();
 };
+
+quickImport?.addEventListener("click",()=>$("audioFile").click());
+quickRecord?.addEventListener("click",()=>$("recordBtn").click());
+quickPlay?.addEventListener("click",()=>{const player=$("player");if(player.paused){player.play();quickPlay.textContent="Pause Take"}else{player.pause();quickPlay.textContent="Play Take"}});
 
 $("projectFile").onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;
@@ -280,6 +287,9 @@ $("swingAmount").oninput=e=>{e.target.nextElementSibling.value=Number(e.target.v
 
 document.querySelectorAll("[data-mix]").forEach(input=>{
   input.oninput=()=>{project.mix[input.dataset.mix]=Number(input.value);input.nextElementSibling.value=Number(input.value).toFixed(2);invalidateRender()};
+});
+document.querySelectorAll("[data-track-gain]").forEach(input=>{
+  input.oninput=()=>{const key=input.dataset.trackGain;project.mix[key]=Number(input.value);const mixer=document.querySelector(`[data-mix="${key}"]`);if(mixer){mixer.value=input.value;mixer.nextElementSibling.value=Number(input.value).toFixed(2)}invalidateRender()};
 });
 $("masterPreset").onchange=e=>{project.mastering.preset=e.target.value;invalidateRender()};
 $("roomAmount").oninput=e=>{project.mastering.room=Number(e.target.value);e.target.nextElementSibling.value=Number(e.target.value).toFixed(2);invalidateRender()};

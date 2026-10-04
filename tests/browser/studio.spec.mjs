@@ -5,7 +5,7 @@ import {
 
 test('boots with safe disabled states and keyboard-wired controls', async ({ page }) => {
   await expect(page).toHaveTitle('One-Man Jam Band Studio');
-  await expect(page.getByRole('heading', { level: 2 })).toHaveCount(7);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveCount(9);
   for (const id of ['stopTuner', 'stopRecordBtn', 'analyzeBtn', 'arrangeBtn',
     'renderBtn', 'downloadBtn', 'exportStemsBtn', 'aceAllBtn', 'aceCancelBtn']) {
     await expect(page.locator(`#${id}`)).toBeDisabled();
