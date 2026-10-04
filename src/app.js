@@ -194,7 +194,7 @@ $("startTuner").onclick=()=>startTuner().catch(e=>alert(e.message));$("stopTuner
 $("audioFile").onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;
   const previousName=project.source?.name;
-  loadedArrayBuffer=await file.arrayBuffer();decodedBuffer=null;renderedBuffer=null;currentAudioName=file.name;revokeMix();
+  loadedArrayBuffer=await file.arrayBuffer();decodedBuffer=null;currentAudioName=file.name;invalidateRender();
   if(previousName&&previousName!==file.name)clearAllNeural();
   const reopening=project.source?.localAudioRequired&&project.source?.name===file.name;
   if(reopening)project.source={...project.source,type:file.type,size:file.size,originalPreserved:true};
@@ -230,7 +230,7 @@ $("stopRecordBtn").onclick=()=>{mediaRecorder?.stop();$("recordBtn").disabled=fa
 
 $("analyzeBtn").onclick=async()=>{
   try{
-    const decoded=await decodeCurrent();project.analysis=await analyzeAudioBuffer(decoded);project.arrangement=null;project.stems={drums:null,bass:null,lead:null};
+    const decoded=await decodeCurrent();project.analysis=await analyzeAudioBuffer(decoded);project.arrangement=null;project.stems={drums:null,bass:null,lead:null};invalidateRender();
     $("analysis").textContent=JSON.stringify(project.analysis,null,2);$("chordEditor").value=JSON.stringify(project.analysis.chordTimeline||[],null,2);$("applyChordsBtn").disabled=false;
     $("arrangeBtn").disabled=false;$("renderBtn").disabled=true;$("exportStemsBtn").disabled=true;$("arrangement").textContent="Analysis complete. Generate an arrangement.";
   }catch(e){alert(e.message)}

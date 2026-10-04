@@ -1,6 +1,6 @@
 # v0.5.0 browser acceptance
 
-This is the browser acceptance contract for the consolidated v0.5.0 application. The runner adds coverage without changing music generation, rendering, or application behavior. A successful automated run is one part of acceptance; it does not close the Chromebook/Android production gate. Keep this build undeployed until the remaining findings and device checks are reviewed and deployment is separately authorized.
+This is the browser acceptance contract for the consolidated v0.5.0 application. The runner covers existing music generation and rendering, plus the stale-download invalidation fixes described below. A successful automated run is one part of acceptance; it does not close the Chromebook/Android production gate. Keep this build undeployed until the remaining findings and device checks are reviewed and deployment is separately authorized.
 
 ## Run the automated checks
 
@@ -28,7 +28,7 @@ npm run test:browser -- --headed
 
 Record `git rev-parse HEAD` with every run. Retain the command results and failure artifacts with that SHA; a later commit needs a new run. The mobile project is Android-sized Chromium emulation, not a Samsung Galaxy A17 or ChromeOS test.
 
-The runner writes an HTML report in `playwright-report/` and a machine-readable report at `test-results/browser-results.json`. CI uploads both under an artifact name containing the exact tested head SHA and run ID. Reports/traces use only generated fixtures and the fake key. Playwright's console summary counts expected failures as passed; inspect `expectedStatus` versus actual `status` in the JSON/HTML report to distinguish the 12 ordinary cases from the two known defects per viewport.
+The runner writes an HTML report in `playwright-report/` and a machine-readable report at `test-results/browser-results.json`. CI uploads both under an artifact name containing the exact tested head SHA and run ID. Reports/traces use only generated fixtures and the fake key. All 14 cases per viewport are normal passing assertions (28 total); there are no expected-failure cases. Inspect `expectedStatus` versus actual `status` in the JSON/HTML report when recording results.
 
 For a constrained local runner with Chromium already installed, `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/absolute/path/to/chromium npm run verify` selects that executable. Record its version with the result. CI uses the browser pinned by the Playwright lockfile, without this override.
 
@@ -46,16 +46,18 @@ The tests drive the visible page and use a generated short PCM WAV. Browser file
 
 Neural routes are intercepted by the runner. The sentinel key is deliberately fake; no real credentials are supplied and no source audio is sent to a real neural provider. A server check is an explicit metadata request; submitting source audio requires an explicit neural-generation action. The tests do not authorize or provision a service.
 
-## Known v0.5.0 findings
+## Stale-download regressions fixed
 
-Two stale-export transitions are recorded as expected-failing browser tests against the unchanged application:
+Two stale-export transitions originally reproduced against v0.5.0 now use the existing `invalidateRender()` helper:
 
-- After a mix is rendered, re-analyzing the source clears the arrangement metadata but leaves the previous rendered buffer, preview and download available. The old mix can still be downloaded before regeneration.
-- After a mix is rendered, selecting another source file with the same filename can leave the download control enabled even though the rendered buffer was cleared. A different filename follows a different reset path.
+- Successful re-analysis clears the previous rendered buffer, preview URL and status, and disables mix download while the arrangement needs regeneration.
+- Source upload clears the same render state and disables mix download even when the filename is unchanged. Project reopening and neural-stem retention rules are unchanged.
 
-An expected failure documents a reproduced defect; it is not a passing product behavior. An unexpected pass makes the suite fail so the finding must be reviewed and the test converted to a normal assertion when fixed. These findings remain open for release review.
+Both regressions run as normal assertions on both viewports. Each requires download, render and stem export to be disabled after invalidation, the old preview/status to be cleared, and a fresh arrangement/render to produce a valid downloadable stereo WAV. The four former expected failures are no longer exempted from passing.
 
-Project/source matching currently uses the filename, not an audio-content fingerprint. Keep the intended original recording and verify it when reopening; the suite does not establish content identity for same-named files. The arrangement seed input also is not restored to the UI from a loaded arrangement, so the suite does not claim that every control round-trips. No application fixes are included in this acceptance-only change.
+## Remaining project limitations
+
+Project/source matching currently uses the filename, not an audio-content fingerprint. Keep the intended original recording and verify it when reopening; the suite does not establish content identity for same-named files. The arrangement seed input also is not restored to the UI from a loaded arrangement, so the suite does not claim that every control round-trips. These behaviors are outside the stale-download fix.
 
 ## Real-device checklist — not yet verified
 
@@ -105,4 +107,4 @@ Owner release decision: PENDING
 Deployment: NOT PERFORMED
 ```
 
-The physical-device gate remains open until both device records are complete and failures, including the documented export-state defects, have an explicit release disposition. Keep browser acceptance, device acceptance, optional neural service integration, and deployment authorization as separate evidence.
+The physical-device gate remains open until both device records are complete and any failures have an explicit release disposition. All D1–D7 physical checks remain NOT RUN; the automated stale-download regressions do not change that status. Keep browser acceptance, device acceptance, optional neural service integration, and deployment authorization as separate evidence.

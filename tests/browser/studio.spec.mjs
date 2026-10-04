@@ -221,10 +221,8 @@ test('mixer, mastering and production edits invalidate download and allow a fres
   }
 });
 
-// Narrow, active expected failures document baseline defects without modifying
-// musical runtime. Mark only the final assertion, so setup failures remain red.
 for (const action of ['re-analyze', 'reselect same filename']) {
-  test(`known v0.5.0 defect: ${action} should disable stale mix download`, async ({ page }) => {
+  test(`${action} invalidates the old mix and allows a fresh download`, async ({ page }) => {
     await prepareArrangement(page);
     await renderMix(page);
     if (action === 're-analyze') {
@@ -234,9 +232,20 @@ for (const action of ['re-analyze', 'reselect same filename']) {
       await uploadAudio(page);
       await expect(page.locator('#arrangeBtn')).toBeDisabled();
     }
-    test.fail(true, action === 're-analyze'
-      ? 'Re-analysis leaves the old rendered mix downloadable; see docs/BROWSER_ACCEPTANCE.md.'
-      : 'Same-filename upload clears renderedBuffer but leaves Download Mix WAV enabled; see docs/BROWSER_ACCEPTANCE.md.');
     await expect(page.locator('#downloadBtn')).toBeDisabled({ timeout: 1000 });
+    await expect(page.locator('#mixPlayer')).not.toHaveAttribute('src', /.+/);
+    await expect(page.locator('#renderStatus')).toBeEmpty();
+    for (const id of ['renderBtn', 'exportStemsBtn']) await expect(page.locator(`#${id}`)).toBeDisabled();
+    if (action === 'reselect same filename') await page.locator('#analyzeBtn').click();
+    await page.locator('#arrangeBtn').click();
+    await expect(page.locator('#downloadBtn')).toBeDisabled();
+    await renderMix(page);
+    await expect(page.locator('#mixPlayer')).toHaveAttribute('src', /^blob:/);
+    await expect(page.locator('#exportStemsBtn')).toBeEnabled();
+    const pending = page.waitForEvent('download');
+    await page.locator('#downloadBtn').click();
+    const download = await pending;
+    expect(download.suggestedFilename()).toBe('acceptance-tone-mix.wav');
+    expectStereoWav(await downloadBytes(download));
   });
 }

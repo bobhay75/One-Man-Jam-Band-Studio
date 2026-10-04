@@ -55,7 +55,7 @@ The current true-peak and LUFS displays are engineering estimates for production
 - Speech/music ambiguity is surfaced for review instead of silently treated as musical evidence.
 
 ## Next production gates
-1. Physical Chromebook/Android acceptance with real uploaded tracks; deterministic browser coverage is now automated, with existing export-state defects recorded explicitly
+1. Physical Chromebook/Android acceptance with real uploaded tracks; deterministic browser coverage is automated, including stale-download invalidation regressions
 2. Standards-grade LUFS/true-peak target normalization
 3. Optional sampled instrument pack with explicit licensing/local caching
 4. Section labels, waveform zoom and transport-linked timeline editing
@@ -69,6 +69,6 @@ npx playwright install --with-deps chromium
 npm run verify
 ```
 
-`npm run verify` runs syntax checks, all existing Node tests, and browser acceptance on desktop and Android-sized Chromium viewports. `npm run test:browser` runs only the browser suite. Tests use a generated two-second WAV, real browser audio/file APIs, and intercepted neural requests; no service or credentials are required. No application or music behavior is changed.
+`npm run verify` runs syntax checks, all existing Node tests, and browser acceptance on desktop and Android-sized Chromium viewports. `npm run test:browser` runs only the browser suite. Tests use a generated two-second WAV, real browser audio/file APIs, and intercepted neural requests; no service or credentials are required. Re-analysis and same-filename source replacement now invalidate stale mix downloads through the existing render-reset path; music generation is unchanged.
 
-See [the acceptance checklist](docs/BROWSER_ACCEPTANCE.md) for coverage, known expected failures, and the remaining physical-device checks. Emulated mobile results do not close the Chromebook/Android production gate. The build remains undeployed.
+See [the acceptance checklist](docs/BROWSER_ACCEPTANCE.md) for coverage, stale-download regression checks, and the remaining physical-device checks. Emulated mobile results do not close the Chromebook/Android production gate. The build remains undeployed.
