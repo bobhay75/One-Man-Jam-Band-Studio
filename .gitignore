@@ -9,3 +9,5 @@ dist/
 projects/
 renders/
 tmp/
+playwright-report/
+test-results/
