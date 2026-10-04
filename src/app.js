@@ -20,6 +20,7 @@ let neuralStemUrls = {drums:null,bass:null,lead:null};
 let neuralAbort = null;
 let mediaRecorder = null, chunks = [];
 const $ = id => document.getElementById(id);
+const quickRecord = $("quickRecordBtn"), quickImport = $("quickImportBtn"), quickPlay = $("quickPlayBtn");
 
 async function decodeCurrent(){
   if(decodedBuffer) return decodedBuffer;
@@ -118,6 +119,8 @@ function syncControls(){
   $("applyChordsBtn").disabled=!project.analysis;
   $("arrangement").textContent=arrangementSummary();renderRegions();
   const matching=hasMatchingAudio();
+  if(quickPlay)quickPlay.disabled=!loadedArrayBuffer;
+  const state1=$("trackState1");if(state1)state1.textContent=loadedArrayBuffer?(currentAudioName==="recording"?"Recorded take ready":"Imported take ready"):"Waiting for a take";
   $("analyzeBtn").disabled=!loadedArrayBuffer;
   $("arrangeBtn").disabled=!(project.analysis&&matching);
   $("renderBtn").disabled=!(project.arrangement&&matching);
@@ -204,6 +207,10 @@ $("audioFile").onchange=async e=>{
   syncControls();await refreshWaveform();
 };
 
+quickImport?.addEventListener("click",()=>$("audioFile").click());
+quickRecord?.addEventListener("click",()=>$("recordBtn").click());
+quickPlay?.addEventListener("click",()=>{const player=$("player");if(player.paused){player.play();quickPlay.textContent="Pause Take"}else{player.pause();quickPlay.textContent="Play Take"}});
+
 $("projectFile").onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;
   try{
@@ -280,6 +287,9 @@ $("swingAmount").oninput=e=>{e.target.nextElementSibling.value=Number(e.target.v
 
 document.querySelectorAll("[data-mix]").forEach(input=>{
   input.oninput=()=>{project.mix[input.dataset.mix]=Number(input.value);input.nextElementSibling.value=Number(input.value).toFixed(2);invalidateRender()};
+});
+document.querySelectorAll("[data-track-gain]").forEach(input=>{
+  input.oninput=()=>{const key=input.dataset.trackGain;project.mix[key]=Number(input.value);const mixer=document.querySelector(`[data-mix="${key}"]`);if(mixer){mixer.value=input.value;mixer.nextElementSibling.value=Number(input.value).toFixed(2)}invalidateRender()};
 });
 $("masterPreset").onchange=e=>{project.mastering.preset=e.target.value;invalidateRender()};
 $("roomAmount").oninput=e=>{project.mastering.room=Number(e.target.value);e.target.nextElementSibling.value=Number(e.target.value).toFixed(2);invalidateRender()};
