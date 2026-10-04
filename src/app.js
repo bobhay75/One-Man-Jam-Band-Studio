@@ -1,4 +1,4 @@
-import { autoCorrelate, frequencyToNote, noteName, centsOff } from "./tuner.js";
+import { autoCorrelate, frequencyToNote, noteName, centsOff, tunerState } from "./tuner.js";
 import { createProject, setSource } from "./project.js";
 import { analyzeAudioBuffer } from "./analyze.js";
 import { buildArrangement } from "./arranger.js";
@@ -185,10 +185,10 @@ async function startTuner(){
   audioCtx ||= new AudioContext();micStream=await navigator.mediaDevices.getUserMedia({audio:true});
   const source=audioCtx.createMediaStreamSource(micStream);analyser=audioCtx.createAnalyser();analyser.fftSize=2048;source.connect(analyser);
   const buf=new Float32Array(analyser.fftSize);
-  const tick=()=>{analyser.getFloatTimeDomainData(buf);const freq=autoCorrelate(buf,audioCtx.sampleRate);if(freq>0){const n=frequencyToNote(freq);$("note").textContent=noteName(n);$("freq").textContent=freq.toFixed(1)+" Hz";$("cents").textContent=centsOff(freq,n)+" cents"}raf=requestAnimationFrame(tick)};
+  const tick=()=>{analyser.getFloatTimeDomainData(buf);const freq=autoCorrelate(buf,audioCtx.sampleRate);const card=document.querySelector(".tuner-card");if(freq>0){const n=frequencyToNote(freq),name=noteName(n),cents=centsOff(freq,n),state=tunerState(cents),target=440*Math.pow(2,(n-69)/12);$("note").textContent=name;$("freq").textContent=freq.toFixed(1)+" Hz";$("cents").textContent=(cents>0?"+":"")+cents+" cents";$("tunerTarget").textContent=`Target: ${target.toFixed(1)} Hz`;$("tunerStatus").textContent=state==="in-tune"?"IN TUNE":state==="flat"?"TOO FLAT":"TOO SHARP";card.dataset.state=state;$("tunerNeedle").style.transform=`translateX(-50%) rotate(${Math.max(-42,Math.min(42,cents*.84))}deg)`}else{$("tunerStatus").textContent="PLAY A NOTE";card.dataset.state="waiting";$("tunerNeedle").style.transform="translateX(-50%) rotate(0deg)"}raf=requestAnimationFrame(tick)};
   tick();$("startTuner").disabled=true;$("stopTuner").disabled=false;
 }
-function stopTuner(){cancelAnimationFrame(raf);micStream?.getTracks().forEach(t=>t.stop());$("startTuner").disabled=false;$("stopTuner").disabled=true}
+function stopTuner(){cancelAnimationFrame(raf);micStream?.getTracks().forEach(t=>t.stop());$("startTuner").disabled=false;$("stopTuner").disabled=true;$("tunerStatus").textContent="PLAY A NOTE";document.querySelector(".tuner-card")?.setAttribute("data-state","waiting")}
 $("startTuner").onclick=()=>startTuner().catch(e=>alert(e.message));$("stopTuner").onclick=stopTuner;
 
 $("audioFile").onchange=async e=>{

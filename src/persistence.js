@@ -1,4 +1,4 @@
-const DEFAULT_PRODUCTION={drumStyle:"studio",bassStyle:"round",leadStyle:"clean",timingMs:10,velocityJitter:.05,swing:.08};
+const DEFAULT_PRODUCTION={drumStyle:"studio",bassStyle:"round",leadStyle:"clean",timingMs:2,velocityJitter:.035,swing:.02};
 export function serializeProject(project){
   const clean=structuredClone(project);
   if(clean.source)clean.source={...clean.source,localAudioRequired:true};

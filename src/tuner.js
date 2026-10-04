@@ -47,5 +47,10 @@ export function noteName(note) {
 
 export function centsOff(freq, note) {
   const ref = 440 * Math.pow(2, (note - 69) / 12);
-  return Math.floor(1200 * Math.log(freq / ref) / Math.log(2));
+  return Math.round(1200 * Math.log(freq / ref) / Math.log(2));
+}
+export function tunerState(cents, tolerance = 5) {
+  if (!Number.isFinite(cents)) return "waiting";
+  if (Math.abs(cents) <= tolerance) return "in-tune";
+  return cents < 0 ? "flat" : "sharp";
 }
