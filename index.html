@@ -17,7 +17,9 @@
     <div class="eyebrow">START HERE</div>
     <h2>Make a song in four moves</h2>
     <div class="workflow-steps"><div><b>1</b><span>Record or choose a guitar track</span></div><div><b>2</b><span>Check the take</span></div><div><b>3</b><span>Add a tempo-locked band</span></div><div><b>4</b><span>Render and listen</span></div></div>
-    <div class="row start-actions"><button id="quickRecordBtn" class="primary" type="button">Record Guitar</button><label id="quickImportBtn" class="button file-picker" for="audioFile" role="button" tabindex="0">Choose Audio File</label><button id="quickPlayBtn" type="button" disabled>Play Take</button></div>
+    <div class="row start-actions"><button id="quickRecordBtn" class="primary" type="button">Record Guitar</button><div id="quickImportBtn" class="file-picker"><label for="audioFile">Choose Audio File</label><input id="audioFile" type="file" aria-describedby="fileHelp" /></div><button id="quickPlayBtn" type="button" disabled>Play Take</button></div>
+    <div id="sessionStatus" class="status" role="status" aria-live="polite" aria-atomic="true">Choose or record an original take to begin.</div>
+    <p id="fileHelp" class="muted small">WAV, MP3, M4A, Ogg, WebM or FLAC; support depends on your browser. If a recording is missing or grayed out, use Browse all files below. Files stay on this device.</p>
     <p class="muted small">You do not need to understand waveform editing, chord JSON, or neural servers to make a first mix. Those are advanced tools below.</p>
   </section>
 
@@ -36,30 +38,33 @@
   <section class="panel">
     <div class="eyebrow">SESSION CONSOLE</div>
     <h2>8-Track Workspace</h2>
-    <p class="muted">A familiar track view: your original take plus backing parts. Empty lanes are ready for additional recordings.</p>
-    <div class="track-console" role="table" aria-label="Eight track workspace">
-      <div class="track-head" role="row"><span>Track</span><span>Part</span><span>Level</span><span>State</span></div>
-      <div class="track-row active" role="row"><b>1</b><span>Guitar / Original</span><input data-track-gain="sourceGain" type="range" min="0" max="1.5" value="1" step=".01" aria-label="Guitar level"><em id="trackState1">Waiting for a take</em></div>
-      <div class="track-row" role="row"><b>2</b><span>Drums</span><input data-track-gain="drumsGain" type="range" min="0" max="1.5" value=".65" step=".01" aria-label="Drums level"><em>Generated after analysis</em></div>
-      <div class="track-row" role="row"><b>3</b><span>Bass</span><input data-track-gain="bassGain" type="range" min="0" max="1.5" value=".6" step=".01" aria-label="Bass level"><em>Generated after analysis</em></div>
-      <div class="track-row" role="row"><b>4</b><span>Lead</span><input data-track-gain="leadGain" type="range" min="0" max="1.5" value=".45" step=".01" aria-label="Lead level"><em>Generated after analysis</em></div>
-      <div class="track-row empty" role="row"><b>5</b><span>Guitar Double</span><span class="track-empty">Empty — record a second part</span><em>Ready</em></div>
-      <div class="track-row empty" role="row"><b>6</b><span>Vocal</span><span class="track-empty">Empty — record a vocal</span><em>Ready</em></div>
-      <div class="track-row empty" role="row"><b>7</b><span>Harmony</span><span class="track-empty">Empty — record harmony</span><em>Ready</em></div>
-      <div class="track-row empty" role="row"><b>8</b><span>FX / Room</span><span class="track-empty">Empty — record texture</span><em>Ready</em></div>
+    <p class="muted">Tracks 1–4 hold your original and backing band. Import additional parts into tracks 5–8, or choose a recording destination below. All tracks share the same timeline. Use a negative offset to trim a late start; positive offsets delay a part. Recording does not play a monitor mix; use headphones and align the new take afterward.</p>
+    <div class="track-console" aria-label="Eight track workspace">
+      <div class="track-head"><span>Track</span><span>Part</span><span>Level</span><span>State</span></div>
+      <div class="track-row active"><b>1</b><span>Guitar / Original</span><input data-track-gain="sourceGain" type="range" min="0" max="1.5" value="1" step=".01" aria-label="Guitar level"><em id="trackState1">Waiting for a take</em></div>
+      <div class="track-row"><b>2</b><span>Drums</span><input data-track-gain="drumsGain" type="range" min="0" max="1.5" value=".65" step=".01" aria-label="Drums level"><em id="trackState2">Generate after analysis</em></div>
+      <div class="track-row"><b>3</b><span>Bass</span><input data-track-gain="bassGain" type="range" min="0" max="1.5" value=".6" step=".01" aria-label="Bass level"><em id="trackState3">Generate after analysis</em></div>
+      <div class="track-row"><b>4</b><span>Lead</span><input data-track-gain="leadGain" type="range" min="0" max="1.5" value=".45" step=".01" aria-label="Lead level"><em id="trackState4">Generate after analysis</em></div>
+      <div class="track-row" id="track5"><b>5</b><span>Guitar Double</span><label>Level <input id="track5Gain" type="range" min="0" max="1.5" value="1" step=".01" aria-label="Guitar Double level"></label><em id="track5State">Empty</em><div class="track-tools"><label>Choose Guitar Double audio <input id="track5File" data-track-file type="file" disabled></label><label>Start offset (s) <input id="track5Offset" type="number" min="-600" max="600" step=".01" value="0"></label><button id="track5Remove" disabled>Remove Guitar Double</button><audio id="track5Player" controls aria-label="Guitar Double preview"></audio></div></div>
+      <div class="track-row" id="track6"><b>6</b><span>Vocal</span><label>Level <input id="track6Gain" type="range" min="0" max="1.5" value="1" step=".01" aria-label="Vocal level"></label><em id="track6State">Empty</em><div class="track-tools"><label>Choose Vocal audio <input id="track6File" data-track-file type="file" disabled></label><label>Start offset (s) <input id="track6Offset" type="number" min="-600" max="600" step=".01" value="0"></label><button id="track6Remove" disabled>Remove Vocal</button><audio id="track6Player" controls aria-label="Vocal preview"></audio></div></div>
+      <div class="track-row" id="track7"><b>7</b><span>Harmony</span><label>Level <input id="track7Gain" type="range" min="0" max="1.5" value="1" step=".01" aria-label="Harmony level"></label><em id="track7State">Empty</em><div class="track-tools"><label>Choose Harmony audio <input id="track7File" data-track-file type="file" disabled></label><label>Start offset (s) <input id="track7Offset" type="number" min="-600" max="600" step=".01" value="0"></label><button id="track7Remove" disabled>Remove Harmony</button><audio id="track7Player" controls aria-label="Harmony preview"></audio></div></div>
+      <div class="track-row" id="track8"><b>8</b><span>FX / Room</span><label>Level <input id="track8Gain" type="range" min="0" max="1.5" value="1" step=".01" aria-label="FX / Room level"></label><em id="track8State">Empty</em><div class="track-tools"><label>Choose FX / Room audio <input id="track8File" data-track-file type="file" disabled></label><label>Start offset (s) <input id="track8Offset" type="number" min="-600" max="600" step=".01" value="0"></label><button id="track8Remove" disabled>Remove FX / Room</button><audio id="track8Player" controls aria-label="FX / Room preview"></audio></div></div>
     </div>
   </section>
 
   <section class="panel">
     <h2>Track + Project</h2>
     <div class="stack">
-      <label>Audio <input id="audioFile" type="file" accept="audio/*" /></label>
+      <label>Browse all files <input id="audioFileAll" type="file" aria-describedby="fileHelp" /></label>
       <label>Project <input id="projectFile" type="file" accept=".json,.omjbs.json,application/json" /></label>
     </div>
+    <label>Record into <select id="recordTarget"><option value="source">Track 1 — Original</option><option value="track5">Track 5 — Guitar Double</option><option value="track6">Track 6 — Vocal</option><option value="track7">Track 7 — Harmony</option><option value="track8">Track 8 — FX / Room</option></select></label>
     <button id="recordBtn">Record Guitar</button>
     <button id="stopRecordBtn" disabled>Stop</button>
     <button id="saveProjectBtn">Save Project</button>
-    <audio id="player" controls></audio>
+    <button id="saveOriginalBtn" disabled>Save Original Audio</button>
+    <p class="muted small">Save the original recording as well as the project. Project files contain settings only; reselect each take after reopening.</p>
+    <audio id="player" controls aria-label="Original take preview"></audio>
     <div id="meta"></div>
     <h3>Waveform / Exclusion Editor</h3>
     <p class="muted">Drag across the waveform to mark a section where generated drums, bass and lead must stay out.</p>
@@ -73,9 +78,9 @@
     <pre id="analysis">Load or record a track to begin.</pre>
     <details>
       <summary>Edit detected chord timeline</summary>
-      <textarea id="chordEditor" rows="10" spellcheck="false">[]</textarea>
+      <textarea aria-label="Chord timeline JSON" id="chordEditor" rows="10" spellcheck="false">[]</textarea>
       <button id="applyChordsBtn" disabled>Apply Chord Timeline</button>
-      <div id="chordStatus" class="muted"></div>
+      <div role="status" id="chordStatus" class="muted"></div>
     </details>
   </section>
 
@@ -95,6 +100,8 @@
     <h2>Chord-Aware Jam Band</h2>
     <p class="muted">Builds a tempo-locked backing band from detected or edited chords. The grid stays tight by default; feel controls add only a small, deliberate amount of movement.</p>
     <div class="production-grid">
+      <label>Tempo BPM <input id="tempoBpm" type="number" min="40" max="220" step=".1" value="120"></label>
+      <label>First beat (s) <input id="beatOffset" type="number" min="0" step=".01" value="0"></label>
       <label>Drums
         <select id="drumStyle">
           <option value="studio">Studio</option>
@@ -154,7 +161,7 @@
       <button data-neural-generate="lead" disabled>Neural Lead</button>
       <button id="aceCancelBtn" disabled>Cancel</button>
     </div>
-    <div id="aceStatus" class="status muted">Neural rendering is optional; the local band remains available.</div>
+    <div role="status" aria-live="polite" id="aceStatus" class="status muted">Neural rendering is optional; the local band remains available.</div>
     <div class="neural-stems">
       <article>
         <strong>Drums</strong> <span data-neural-state="drums">local</span>
@@ -195,10 +202,11 @@
       </label>
       <button id="renderBtn" disabled>Render Studio Mix</button>
       <button id="downloadBtn" disabled>Download Mix WAV</button>
-      <button id="exportStemsBtn" disabled>Export 4 Stems</button>
+      <button id="exportStemsBtn" disabled>Prepare Stem WAVs</button>
     </div>
-    <audio id="mixPlayer" controls></audio>
-    <div id="renderStatus"></div>
+    <audio id="mixPlayer" controls aria-label="Rendered mix preview"></audio>
+    <div id="renderStatus" role="status" aria-live="polite"></div>
+    <div id="stemDownloads" class="stem-downloads"></div>
   </section>
 </main>
 <script type="module" src="src/app.js"></script>

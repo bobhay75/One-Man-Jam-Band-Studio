@@ -28,9 +28,9 @@ test('boots with safe disabled states and keyboard-wired controls', async ({ pag
 test('visible Choose Audio File control directly targets the native audio picker', async ({ page }) => {
   const picker = page.locator('#audioFile');
   const action = page.locator('#quickImportBtn');
-  await expect(action).toHaveAttribute('for', 'audioFile');
+  await expect(action.locator('label')).toHaveAttribute('for', 'audioFile');
   await expect(picker).toHaveAttribute('type', 'file');
-  await expect(picker).toHaveAttribute('accept', 'audio/*');
+  await expect(picker).toHaveAttribute('accept', /audio\/\*.*\.m4a/);
   await expect(action).toBeVisible();
 });
 
@@ -62,12 +62,12 @@ test('local upload, analyze, arrange, render and five WAV downloads use browser 
   expectStereoWav(await downloadBytes(mix));
 
   const stems = [];
-  const capture = download => stems.push(download);
-  page.on('download', capture);
   await page.locator('#exportStemsBtn').click();
   await expect(page.locator('#renderStatus')).toContainText('Stem renders complete.');
-  await expect.poll(() => stems.length).toBe(4);
-  page.off('download', capture);
+  await expect(page.locator('#stemDownloads a')).toHaveCount(4);
+  for(const link of await page.locator('#stemDownloads a').all()){
+    const pending=page.waitForEvent('download');await link.click();stems.push(await pending);
+  }
   expect(stems.map(d => d.suggestedFilename()).sort()).toEqual(
     ['bass', 'drums', 'lead', 'original'].map(s => `acceptance-tone-${s}.wav`));
   for (const download of stems) expectStereoWav(await downloadBytes(download));
@@ -99,7 +99,7 @@ test('portable project round-trips edits/settings and gates rendering until sour
   await expect(page.locator('#renderBtn')).toBeEnabled();
   const saved = await saveProject(page);
   expect(saved.download.suggestedFilename()).toBe('acceptance-tone.omjbs.json');
-  expect(saved.project.source).toEqual({ name: 'acceptance-tone.wav', type: 'audio/wav',
+  expect(saved.project.source).toMatchObject({ name: 'acceptance-tone.wav', type: 'audio/wav',
     size: 64044, originalPreserved: true, localAudioRequired: true });
   expect(saved.project.analysis.chordTimeline).toEqual(chords);
   expect(saved.project.mix).toEqual(mix);
@@ -145,12 +145,8 @@ test('portable project round-trips edits/settings and gates rendering until sour
 test('invalid project is reported without replacing the current editable project', async ({ page }) => {
   await prepareArrangement(page);
   const before = (await saveProject(page)).project;
-  const dialogPromise = page.waitForEvent('dialog').then(async dialog => {
-    expect(dialog.message()).toBe('Project version missing');
-    await dialog.accept();
-  });
   await page.locator('#projectFile').setInputFiles({ name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
-  await dialogPromise;
+  await expect(page.locator('#sessionStatus')).toContainText('Project version missing');
   expect((await saveProject(page)).project).toEqual(before);
   await expect(page.locator('#renderBtn')).toBeEnabled();
 });

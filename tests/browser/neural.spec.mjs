@@ -59,6 +59,28 @@ function assertSubmission(submission, instruction) {
   expect(source.equals(wavFixture())).toBe(true);
 }
 
+test('same-name source replacement clears completed neural audio and cancels audio still decoding',async({page})=>{
+  await mockSuccessfulProvider(page);await configureNeural(page);await prepareArrangement(page);
+  await page.locator('[data-neural-generate="drums"]').click();
+  await expect(page.locator('[data-neural-state="drums"]')).toHaveText('neural');
+  await uploadAudio(page);
+  await expect(page.locator('[data-neural-state="drums"]')).toHaveText('local');
+  await page.evaluate(()=>{
+    const decode=AudioContext.prototype.decodeAudioData;let held=false;
+    AudioContext.prototype.decodeAudioData=async function(...args){
+      const decoded=await decode.apply(this,args);
+      if(!held){held=true;await new Promise(resolve=>window.releaseNeuralDecode=resolve)}
+      return decoded;
+    };
+  });
+  await page.locator('[data-neural-generate="bass"]').click();
+  await expect.poll(()=>page.evaluate(()=>typeof window.releaseNeuralDecode)).toBe('function');
+  await uploadAudio(page,'replacement.wav');await page.evaluate(()=>window.releaseNeuralDecode());
+  await expect(page.locator('#aceStatus')).toHaveText('Neural render canceled.');
+  await expect(page.locator('[data-neural-state]')).toHaveText(['local','local','local']);
+  await expect(page.locator('[data-neural-audio="bass"]')).not.toHaveAttribute('src');
+});
+
 test('local actions do not contact neural service; explicit health check sends no recording', async ({ page }) => {
   const { requests, submissions } = await mockSuccessfulProvider(page);
   await configureNeural(page);

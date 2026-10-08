@@ -44,7 +44,7 @@ export function estimateTempo(samples,sampleRate){
  const onset=env.map((v,i)=>Math.max(0,v-(env[i-1]||0)));
  let bestLag=0,best=-Infinity; const min=Math.floor(60/(180*hop/sampleRate)),max=Math.ceil(60/(55*hop/sampleRate));
  for(let lag=min;lag<=max;lag++){let s=0;for(let i=lag;i<onset.length;i++)s+=onset[i]*onset[i-lag];if(s>best){best=s;bestLag=lag}}
- return bestLag?+(60/(bestLag*hop/sampleRate)).toFixed(1):null;
+ return bestLag&&best>1e-10?+(60/(bestLag*hop/sampleRate)).toFixed(1):null;
 }
 function goertzel(samples,start,length,sampleRate,freq){
  const coeff=2*Math.cos(2*Math.PI*freq/sampleRate);let s0=0,s1=0,s2=0;
@@ -77,7 +77,7 @@ export function estimateChordTimeline(samples,sampleRate,{windowSec=1.5,stepSec=
  const merged=[];
  for(const r of raw){
    const prev=merged.at(-1);
-   if(prev&&prev.chord===r.chord){prev.endSec=r.endSec;prev.confidence=+((prev.confidence+r.confidence)/2).toFixed(3)}
+   if(prev&&prev.chord===r.chord&&Math.abs(prev.endSec-r.startSec)<.02){prev.endSec=r.endSec;prev.confidence=+((prev.confidence+r.confidence)/2).toFixed(3)}
    else merged.push({...r});
  }
  return merged;

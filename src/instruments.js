@@ -74,7 +74,7 @@ export function createInstrumentRack(ctx,options={}){
     osc.connect(bus);lfo.start(t);osc.start(t);lfo.stop(t+d+cfg.release+.03);osc.stop(t+d+cfg.release+.03);
     const air=ctx.createOscillator(),airGain=gain(ctx,.045*e.velocity);air.type="sine";air.frequency.value=target*2;air.connect(airGain).connect(bus);air.start(t);air.stop(t+d+cfg.release+.03);
     if(o.leadStyle==="ambient"){
-      const echo=ctx.createDelay(.8),fb=gain(ctx,.22),wet=gain(ctx,.18);echo.delayTime.value=.28;bus.connect(echo).connect(wet).connect(dest);echo.connect(fb).connect(echo);
+      const echo=ctx.createDelay(.8),fb=gain(ctx,.22),wet=gain(ctx,.18);echo.delayTime.value=.28;g.connect(echo).connect(wet).connect(dest);echo.connect(fb).connect(echo);
     }
   }
   return {options:o,scheduleDrum,scheduleBass,scheduleLead};
