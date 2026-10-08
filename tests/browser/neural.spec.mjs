@@ -117,7 +117,10 @@ test('single-stem opt-in uploads the source and local fallback invalidates the m
   }
   await expect(page.locator('#downloadBtn')).toBeDisabled();
   await renderMix(page);
+  await page.locator('[data-neural-audio="drums"]').evaluate(audio=>audio.play());
   await page.locator('[data-neural-clear="drums"]').click();
+  expect(await page.locator('[data-neural-audio="drums"]').evaluate(audio=>audio.paused)).toBe(true);
+  await expect(page.locator('#trackState2')).toHaveText('Local part ready');
   await expect(page.locator('[data-neural-state="drums"]')).toHaveText('local');
   await expect(page.locator('[data-neural-clear="drums"]')).toBeDisabled();
   await expect(page.locator('[data-neural-audio="drums"]')).not.toHaveAttribute('src');

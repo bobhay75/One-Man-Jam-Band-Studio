@@ -82,7 +82,8 @@ function revokeNeuralUrl(stem){
 }
 function clearNeuralStem(stem){
   neuralStemBuffers[stem]=null;revokeNeuralUrl(stem);
-  const audio=document.querySelector(`[data-neural-audio="${stem}"]`);audio?.removeAttribute("src");
+  const audio=document.querySelector(`[data-neural-audio="${stem}"]`);
+  if(audio){audio.pause();audio.removeAttribute("src");audio.load()}
   const state=document.querySelector(`[data-neural-state="${stem}"]`);if(state)state.textContent="local";
   const clear=document.querySelector(`[data-neural-clear="${stem}"]`);if(clear)clear.disabled=true;
   invalidateRender();
@@ -504,7 +505,7 @@ $("aceCheckBtn").onclick=async()=>{
 };
 $("aceAllBtn").onclick=()=>runNeural(["drums","bass","lead"]);
 document.querySelectorAll("[data-neural-generate]").forEach(btn=>btn.onclick=()=>runNeural([btn.dataset.neuralGenerate]));
-document.querySelectorAll("[data-neural-clear]").forEach(btn=>btn.onclick=()=>{clearNeuralStem(btn.dataset.neuralClear);$("aceStatus").textContent=`${btn.dataset.neuralClear} reverted to local renderer.`});
+document.querySelectorAll("[data-neural-clear]").forEach(btn=>btn.onclick=()=>{clearNeuralStem(btn.dataset.neuralClear);syncControls();$("aceStatus").textContent=`${btn.dataset.neuralClear} reverted to local renderer.`});
 $("aceCancelBtn").onclick=()=>neuralAbort?.abort();
 
 for(const id of EXTRA_TRACKS){
