@@ -1,110 +1,63 @@
-# v0.5.0 browser acceptance
+# Studio workflow acceptance
 
-This is the browser acceptance contract for the consolidated v0.5.0 application. The runner covers existing music generation and rendering, plus the stale-download invalidation fixes described below. A successful automated run is one part of acceptance; it does not close the Chromebook/Android production gate. Keep this build undeployed until the remaining findings and device checks are reviewed and deployment is separately authorized.
+The repair branch builds on main at fdff80c6523235d8f6f9775a627fdbbb2136bde2, including merged PRs #9 and #10. Automated results do not close the physical Android/Chromebook release gate. Production deployment requires Robert's explicit approval.
 
-## Run the automated checks
+## Automated checks
 
-Use the committed checkout and lockfile. Install Node.js/npm and the supported Chromium dependencies, then run:
+Use the committed checkout and package-lock.json, Node 22 or newer, then run:
 
-```bash
-npm ci
-npx playwright install --with-deps chromium
-npm run verify
-```
+    npm ci
+    npx playwright install --with-deps chromium
+    npm run verify
 
-`verify` runs JavaScript syntax checks, the Node test suite, and Playwright browser acceptance. The Playwright configuration starts its local test server. No ACE-Step service, microphone, private recording, API key, or deployment is required.
+The syntax checker is portable across Windows and Linux. Playwright starts a loopback-only server and tests desktop Chromium plus an Android-sized touch viewport. Reports are written to playwright-report/ and test-results/browser-results.json. GitHub Actions records the exact checked-out head SHA and uploads reports named for that SHA. No expected failures or retries are configured.
 
-```bash
-# Both browser projects
-npm run test:browser
+The browser and Node suites cover:
 
-# One browser project
-npm run test:browser -- --project=chromium-desktop
-npm run test:browser -- --project=chromium-mobile
+- Native file chooser activation by pointer, touch and keyboard, followed by file delivery and real decoding. The all-files fallback accepts recordings with missing/generic MIME types. Attribute checks alone are insufficient.
+- Cancellation, empty/corrupt audio, same-file reselection and out-of-order reads. Invalid imports preserve the prior take.
+- Original playback, pause/end transport feedback, analysis, edited chords, phase/tempo/seed controls, waveform/manual exclusions and input validation.
+- Eight active tracks: the original, three backing parts and four additional imported/recorded parts, with gains, start offsets, preview, original-audio downloads and removal.
+- Project save/load, byte-based SHA-256 source matching, restoration of extra takes and gating incomplete projects. Legacy projects retain settings/exclusions but need explicit audio reselection and reanalysis because no content identity was saved.
+- Real offline stereo mixing, audible extra-track contribution, WAV headers/duration/peak bounds, four-to-eight individually downloadable aligned stems and invalidation of prepared links.
+- Mix and stem renders that finish after session edits cannot publish stale results. Same-name source replacement clears neural audio; cancellation is checked again after generated-audio decoding.
+- Overlapping exclusions mute procedural release/delay tails and neural audio. Humanization uses the same phase as the beat grid. Ambient delay follows the lead volume envelope.
+- Synthetic guitar-range flat/center/sharp pitch checks and browser tuner feedback/reset.
+- Permission-denial recovery and real MediaRecorder encoding of a synthetic stream, including microphone-track release. No physical microphone is used.
+- Optional neural requests use intercepted routes and a fake key. Local workflows must make no external requests; credentials/audio never enter project JSON.
 
-# Interactive local debugging (requires a graphical session)
-npm run test:browser -- --headed
-```
+The chooser tests intercept the browser filechooser event and supply generated audio. They prove browser control activation and decoding, not that Android DocumentsUI, Samsung My Files, Drive providers or ChromeOS Files work on a particular device. Cancellation is a deterministic browser event simulation. Synthetic streams prove application/encoder behavior, not microphone hardware, latency or acoustic quality.
 
-Record `git rev-parse HEAD` with every run. Retain the command results and failure artifacts with that SHA; a later commit needs a new run. The mobile project is Android-sized Chromium emulation, not a Samsung Galaxy A17 or ChromeOS test.
+## Physical-device gate — NOT RUN
 
-The runner writes an HTML report in `playwright-report/` and a machine-readable report at `test-results/browser-results.json`. CI uploads both under an artifact name containing the exact tested head SHA and run ID. Reports/traces use only generated fixtures and the fake key. All 14 cases per viewport are normal passing assertions (28 total); there are no expected-failure cases. Inspect `expectedStatus` versus actual `status` in the JSON/HTML report when recording results.
+Run on Robert's Samsung Galaxy A17 and Acer Chromebook 315 (4 GB RAM), with OS/browser version and exact commit SHA recorded. Use an approved private HTTPS preview or device-local localhost; this checklist does not authorize deployment. Keep real recordings private.
 
-For a constrained local runner with Chromium already installed, `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/absolute/path/to/chromium npm run verify` selects that executable. Record its version with the result. CI uses the browser pinned by the Playwright lockfile, without this override.
-
-## What the runner establishes
-
-The tests drive the visible page and use a generated short PCM WAV. Browser file selection, Web Audio decoding/rendering, project download/upload, and WAV downloads use their real browser APIs. The deterministic fixture makes state assertions reproducible; it is not evidence of musical quality, real-recording compatibility, or long-session performance.
-
-| Area | Automated boundary | Remaining evidence |
+| ID | Test on each physical device | Required result |
 | --- | --- | --- |
-| Core UI | Initial controls, source-dependent actions, analysis and arrangement wiring | Real microphone, hardware input/output, device usability |
-| Project save/load | Downloaded project JSON, saved edits/settings, matching-source requirement, absence of source/neural audio and runtime credentials | Native file picker/download folder, reopening actual recordings; full control fidelity is not claimed |
-| Waveform and chords | Canvas selection, manual exclusion controls, editable chord timeline, invalid JSON feedback, downstream state transitions | Finger drag/scroll interaction, guitar-derived analysis accuracy |
-| Mixer and exports | Mixer/mastering controls, render/download states, real short-fixture WAV/stem download plumbing | Native multiple-download permission, listening, full-track duration and memory use |
-| Neural opt-in | Explicit actions and intercepted request boundaries; fake sentinel key and generated WAV response | Real owner-selected server integration, latency and generated music quality |
-
-Neural routes are intercepted by the runner. The sentinel key is deliberately fake; no real credentials are supplied and no source audio is sent to a real neural provider. A server check is an explicit metadata request; submitting source audio requires an explicit neural-generation action. The tests do not authorize or provision a service.
-
-## Stale-download regressions fixed
-
-Two stale-export transitions originally reproduced against v0.5.0 now use the existing `invalidateRender()` helper:
-
-- Successful re-analysis clears the previous rendered buffer, preview URL and status, and disables mix download while the arrangement needs regeneration.
-- Source upload clears the same render state and disables mix download even when the filename is unchanged. Project reopening and neural-stem retention rules are unchanged.
-
-Both regressions run as normal assertions on both viewports. Each requires download, render and stem export to be disabled after invalidation, the old preview/status to be cleared, and a fresh arrangement/render to produce a valid downloadable stereo WAV. The four former expected failures are no longer exempted from passing.
-
-## Remaining project limitations
-
-Project/source matching currently uses the filename, not an audio-content fingerprint. Keep the intended original recording and verify it when reopening; the suite does not establish content identity for same-named files. The arrangement seed input also is not restored to the UI from a loaded arrangement, so the suite does not claim that every control round-trips. These behaviors are outside the stale-download fix.
-
-## Real-device checklist — not yet verified
-
-Run every row on **Acer Chromebook 315 (4 GB RAM)** and **Samsung Galaxy A17** using the exact reviewed commit. Record the actual OS/browser version. Use an approved private HTTPS preview or device-local localhost so microphone access has a secure context; an ordinary remote HTTP page is not a valid microphone test. This checklist does not authorize production deployment.
-
-Use a short fresh guitar recording first, then one representative full-length recording. Keep the original files unchanged and private. Start a clean page session, leave neural generation unused, and use headphones when checking recording/playback to avoid feedback. Mark each device result `PASS`, `FAIL`, or `NOT RUN`; write what happened rather than inferring a pass from automation.
-
-| ID | Reproducible action on each physical device | Evidence required / acceptance check |
-| --- | --- | --- |
-| D1 — Tuner permission | With microphone permission reset, select **Start Tuner**, deny, then allow through browser/site settings and retry. Select **Stop Tuner**; repeat start/stop. | Denial and recovery are understandable; UI recovers; microphone indicator ends when stopped. Record errors, repeated prompts or a stuck permission state. |
-| D2 — Guitar tuning | Play each open guitar string, then small sharp/flat adjustments, with a reference tuner for comparison. Try quiet room, normal playing distance, and a brief background/resume cycle. | Record note/frequency/cents stability, estimated response delay, missed notes and restart behavior. Decide usability from actual playing; a synthetic waveform does not establish tuner responsiveness. |
-| D3 — Recording permission and codec | Reset permission again. Select **Record**, deny, then allow and retry. Record 10–20 seconds, stop, listen and inspect the waveform. Repeat; separately try tuner and recorder together, stopping each. | Record actual browser recording MIME type/codec where available, UI errors and decode/playback result. No microphone remains active after both features stop; when one still uses it, continued access is expected. Permission-denial recovery is an open check, not an asserted pass. |
-| D4 — Real uploads and capacity | Use the native file picker to upload the actual phone/Chromebook recording and a representative full-length track. Play, analyze, arrange and render it. Repeat a source replacement and a render. | Note format, file size, duration, analysis/render elapsed time, memory observation if available, tab reloads/crashes, stalls or thermal slowdown. Do not assume every `audio/*` format decodes. Establish usable limits for the 4 GB Chromebook. |
-| D5 — Touch and editing | On A17, drag a waveform exclusion with a finger, then scroll past the canvas and repeat in both directions. Edit/apply a chord region; add/remove a manual exclusion. On Chromebook, repeat with trackpad and keyboard. | Correct time interval and region list; ordinary navigation remains usable; regenerated accompaniment respects the edited regions. Capture any accidental scroll/selection. Emulated pointer events do not prove touch behavior. |
-| D6 — Portable project privacy | Make recognizable chord, region and mixer edits; save the `.omjbs.json`. Inspect it locally, reopen in a fresh session, select the original source file and render. Try opening the project before selecting audio. Use only a fake sentinel if checking the API-key field. | Settings/edits retained as supported; source must be selected locally; no raw source/neural audio, endpoint or API key in saved JSON. Reload must not retain the runtime key. Record filename-matching and seed-control limitations above. Do not place private JSON/audio in Git or public evidence. |
-| D7 — Native downloads and listening | Render, download the mix, then select **Export 4 Stems**. Accept native multiple-download permission if requested. Find all five WAV files using the device's file manager and play them in another player. | Record actual download location and names: `*-mix.wav`, `*-original.wav`, `*-drums.wav`, `*-bass.wav`, `*-lead.wav`. Confirm nonempty valid WAVs, channel count, sample rate and duration against the source/render. Listen to beginning/middle/end for expected content, correct stem isolation, dropouts, clipping and usable levels. Note browser blocks, duplicate names, missing files or playback errors. |
-
-The built-in loudness and true-peak displays remain estimates. A green test run or a successful file download does not establish standards-certified metering, musical quality, or acceptable output levels.
+| D1 | Tap/click Choose Audio File; select a local WAV, MP3 and actual phone recording. Repeat from Downloads and available Drive/file providers. Try Browse all files if filtering hides a file. Cancel, retry, and select the same file twice. | Native chooser opens, file can be selected, filename/waveform/playback agree, errors explain unsupported codecs, cancel preserves the take. |
+| D2 | Deny microphone permission for tuner and recorder, then allow it through site settings. Start/stop repeatedly and background/resume. | Controls recover; no stuck capture; microphone indicator ends on Stop. |
+| D3 | Tune all six guitar strings against a reference tuner, slightly flat/sharp and in tune. | Direction and note are correct, readings stable and responsive enough for playing; no stale readings after silence/Stop. |
+| D4 | Record an original, then a second part into track 5. Save both original-audio files. Import parts into tracks 6–8. Preview and adjust offsets. | All takes remain playable/saveable; no accidental replacement of other lanes. Assess practical alignment and recording latency with headphones. Live monitor mixing and automatic latency compensation are not implemented. |
+| D5 | Analyze a real guitar performance. Review BPM/chords, set first beat after a count-in, generate backing, edit exclusions by touch/keyboard, adjust gains in both mixer views. | Band starts and stays on the intended grid; no backing leaks into excluded sections; controls remain usable and levels agree. Subjective backing quality requires listening. |
+| D6 | Render mix; prepare stems; download each link individually. Locate WAVs in Files and play them outside the browser. Change a gain/seed/source during a render and retry. | Correct names and audible isolated tracks, no clipping/dropouts, coherent duration/start alignment, old downloads disappear after edits, no partial/stale links. |
+| D7 | Save project, close/reopen, restore each saved original audio file, render again. Try an identically named different file and a legacy v0.5 project. | Verified recordings restore settings; wrong audio cannot silently inherit analysis. Missing takes prevent rendering. Legacy settings/exclusions survive, but analysis must be rerun. |
+| D8 | Repeat with a representative full-length session on the 4 GB Chromebook and phone. | Record file size/duration, analysis/render time, memory pressure, freezes/crashes, thermal behavior and any practical capacity limit. The 150 MB import guard is not a guaranteed usable capacity. |
 
 ## Evidence record
 
-Copy this per exact commit and device. Reference private evidence without attaching recordings or credentials to a public repository.
+    Commit SHA:
+    Date/time/timezone:
+    Local commands and exit codes:
+    CI run URL and tested SHA:
+    Browser version and viewport projects:
+    Physical device / RAM / OS / browser:
+    Preview origin and build identification:
+    Recording format / size / duration (no private contents):
+    D1–D8: PASS / FAIL / NOT RUN, with observation for each:
+    Listening assessment and reference tuner:
+    Remaining defects:
+    Merge recommendation:
+    Robert's deployment approval: PENDING
+    Deployment: NOT PERFORMED
 
-```text
-Commit SHA:
-Test date/time and timezone:
-Automated command(s), exit status, CI/run link:
-Browser projects passed / failed / expected failures:
-
-Physical device and RAM:
-OS version / browser version:
-Private preview origin and build identification:
-Source format / size / duration (no private recording contents):
-
-D1: NOT RUN — observation / evidence reference:
-D2: NOT RUN — observation / response delay / reference tuner:
-D3: NOT RUN — permission recovery / codec / mic release:
-D4: NOT RUN — timings / memory / limits:
-D5: NOT RUN — input method / observed selection:
-D6: NOT RUN — restored edits / privacy / limitations:
-D7: NOT RUN — names / location / WAV metadata / listening:
-
-Open defects and reproduction steps:
-Retest SHA and results after any fix:
-Device gate: NOT COMPLETE / COMPLETE (with evidence)
-Owner release decision: PENDING
-Deployment: NOT PERFORMED
-```
-
-The physical-device gate remains open until both device records are complete and any failures have an explicit release disposition. All D1–D7 physical checks remain NOT RUN; the automated stale-download regressions do not change that status. Keep browser acceptance, device acceptance, optional neural service integration, and deployment authorization as separate evidence.
+The local band remains procedural synthesis; neither unit tests nor synthetic fixture downloads establish session-player realism. Neural quality/service integration and standards-certified loudness/true-peak metering remain separate limitations. Both physical-device records must be reviewed before removing the release hold.

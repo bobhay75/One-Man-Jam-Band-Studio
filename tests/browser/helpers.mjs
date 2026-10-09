@@ -26,7 +26,8 @@ export function wavFixture() {
 }
 
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  expectedMicRequests: [0, { option: true }],
+  page: async ({ page, expectedMicRequests }, use) => {
     const errors = [], unexpectedRequests = [];
     page.on('pageerror', error => errors.push(error.message));
     // Per-test neural mocks are registered later and take precedence. Everything
@@ -49,7 +50,7 @@ export const test = base.extend({
     await use(page);
     expect(errors, 'Unhandled page errors').toEqual([]);
     expect(unexpectedRequests, 'Unexpected non-local network activity').toEqual([]);
-    expect(await page.evaluate(() => window.__acceptanceMicRequests)).toBe(0);
+    expect(await page.evaluate(() => window.__acceptanceMicRequests)).toBe(expectedMicRequests);
   },
 });
 
