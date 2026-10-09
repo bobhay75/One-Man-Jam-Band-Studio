@@ -289,8 +289,8 @@ function stopTuner(){
 }
 $("startTuner").onclick=startTuner;$("stopTuner").onclick=stopTuner;
 
-async function importTake(file,target="source"){
-  cancelAudioLink();
+async function importTake(file,target="source",fromLink=false){
+  if(!fromLink)cancelAudioLink("Link import replaced by a newer take.");
   const token=++importId;importBusy=true;invalidateRender();syncControls();report("Opening "+file.name+"…");
   try{
     if(!file.size)throw new Error("This file is empty. Choose a recording with audio.");
@@ -363,9 +363,9 @@ $("audioLinkForm").onsubmit=async event=>{
   try{
     const file=await fetchAudioLink(link.url,{signal:controller.signal});
     if(token!==importId||controller.signal.aborted)return;
-    audioLinkAbort=null;importBusy=false;
+    clearTimeout(timeout);
     $("audioLinkStatus").textContent="Download complete. Checking audio…";
-    const imported=importTake(file),decodeToken=importId;
+    const imported=importTake(file,"source",true),decodeToken=importId;
     await imported;
     if(decodeToken===importId)$("audioLinkStatus").textContent=$("sessionStatus").textContent;
   }catch(error){

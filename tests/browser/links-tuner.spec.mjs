@@ -118,3 +118,25 @@ test.describe('stable tuner scheduling',()=>{
     await page.evaluate(()=>window.tunerContext.close());
   });
 });
+
+test('a local file supersedes a downloaded link still waiting for audio decoding',async({page})=>{
+  await page.route('https://audio.invalid/old.wav',route=>route.fulfill({status:200,contentType:'audio/wav',body:wavFixture()}));
+  await page.evaluate(()=>{
+    const decode=AudioContext.prototype.decodeAudioData;let first=true;
+    AudioContext.prototype.decodeAudioData=function(bytes){
+      if(!first)return decode.call(this,bytes);
+      first=false;
+      return new Promise((resolve,reject)=>{window.finishLinkDecode=()=>decode.call(this,bytes).then(resolve,reject)});
+    };
+  });
+  await page.locator('#audioLink').fill('https://audio.invalid/old.wav');
+  await page.locator('#openAudioLink').click();
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishLinkDecode)).toBe('function');
+  await expect(page.locator('#cancelAudioLink')).toBeEnabled();
+  await uploadAudio(page,'newest.wav');
+  await page.evaluate(()=>window.finishLinkDecode());
+  await expect(page.locator('#meta')).toContainText('newest.wav');
+  await expect(page.locator('#audioLinkStatus')).toContainText('replaced by a newer take');
+  await expect(page.locator('#analyzeBtn')).toBeEnabled();
+  await expect(page.locator('#cancelAudioLink')).toBeDisabled();
+});
