@@ -20,17 +20,26 @@
     <div class="row start-actions"><button id="quickRecordBtn" class="primary" type="button">Record Guitar</button><div id="quickImportBtn" class="file-picker"><label for="audioFile">Choose Audio File</label><input id="audioFile" type="file" aria-describedby="fileHelp" /></div><button id="quickPlayBtn" type="button" disabled>Play Take</button></div>
     <div id="sessionStatus" class="status" role="status" aria-live="polite" aria-atomic="true">Choose or record an original take to begin.</div>
     <p id="fileHelp" class="muted small">WAV, MP3, M4A, Ogg, WebM or FLAC; support depends on your browser. If a recording is missing or grayed out, use Browse all files below. Files stay on this device.</p>
+    <form id="audioLinkForm" class="stack" novalidate>
+      <label for="audioLink">Paste an audio or Google Drive file link</label>
+      <input id="audioLink" type="url" inputmode="url" autocomplete="off" spellcheck="false" aria-describedby="audioLinkHelp" placeholder="https://…" />
+      <div class="row"><button id="openAudioLink" type="submit">Use Audio Link</button><button id="cancelAudioLink" type="button" disabled>Cancel Link Import</button></div>
+      <p id="audioLinkHelp" class="muted small">Direct audio links can be imported if the host allows it. Drive links open a download step: save the audio, then choose it here. Private Drive files do not need to be made public.</p>
+      <div id="audioLinkStatus" role="status" aria-live="polite"></div>
+      <a id="driveAudioLink" target="_blank" rel="noopener noreferrer" hidden>Open file in Google Drive to download</a>
+    </form>
     <p class="muted small">You do not need to understand waveform editing, chord JSON, or neural servers to make a first mix. Those are advanced tools below.</p>
   </section>
 
   <section class="panel">
     <h2>Chromatic Tuner</h2>
-    <div class="tuner-card" aria-live="polite">
+    <div class="tuner-card">
       <div id="tunerStatus" class="tuner-status">PLAY A NOTE</div>
       <div class="tuner-note-row"><span class="tuner-side tuner-flat">♭ FLAT</span><div id="note">--</div><span class="tuner-side tuner-sharp">SHARP ♯</span></div>
       <div class="tuner-meter" role="img" aria-label="Tuner pitch meter"><div class="tuner-zone tuner-zone-flat"></div><div class="tuner-zone tuner-zone-center"></div><div class="tuner-zone tuner-zone-sharp"></div><div class="tuner-tick tick-left"></div><div class="tuner-tick tick-center"></div><div class="tuner-tick tick-right"></div><div id="tunerNeedle" class="tuner-needle"></div></div>
       <div class="tuner-reading"><span id="freq">0.0 Hz</span><span id="cents">0 cents</span></div><div id="tunerTarget" class="tuner-target">Target: --</div>
     </div>
+    <p id="tunerAnnouncement" role="status" aria-live="polite" aria-atomic="true" class="muted small">Play one note and let it ring. Range: 55–1400 Hz.</p>
     <button id="startTuner">Start Tuner</button>
     <button id="stopTuner" disabled>Stop Tuner</button>
   </section>
