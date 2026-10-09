@@ -37,3 +37,12 @@ test('canceled downloads cannot finish as an imported file',async()=>{
   const controller=new AbortController();controller.abort();
   await assert.rejects(fetchAudioLink('https://audio.invalid/file',{signal:controller.signal,fetchImpl:async()=>new Response('audio')}),{name:'AbortError'});
 });
+
+test('early response rejection cancels the body instead of continuing to download',async()=>{
+  for(const options of [{headers:{'Content-Type':'text/html'}},{headers:{'Content-Length':String(MAX_AUDIO_BYTES+1)}},{status:403}]){
+    let canceled=false;
+    const body=new ReadableStream({cancel(){canceled=true}});
+    await assert.rejects(fetchAudioLink('https://audio.invalid/file',{fetchImpl:async()=>new Response(body,options)}));
+    assert.equal(canceled,true);
+  }
+});

@@ -33,7 +33,10 @@ export function autoCorrelate(buffer, sampleRate) {
     const curvature = left - 2 * mid + right;
     const shift = curvature ? Math.max(-.5, Math.min(.5, (left - right) / (2 * curvature))) : 0;
     const frequency = rate / (lag + shift);
-    return frequency >= 55 && frequency <= 1400 ? frequency : -1;
+    // Allow five cents of interpolation error at the advertised range edges.
+    const margin = 2 ** (5 / 1200);
+    return frequency >= 55 / margin && frequency <= 1400 * margin
+      ? Math.max(55, Math.min(1400, frequency)) : -1;
   }
   return -1;
 }
@@ -68,14 +71,16 @@ export function createTunerTracker() {
         if (now - lastValid > 350) reading = null;
         return reading;
       }
-      lastValid = now;
       const pitch = 69 + 12 * Math.log2(frequency / 440);
       history.push(pitch); if (history.length > 3) history.shift();
       const median = [...history].sort((a, b) => a - b)[Math.floor(history.length / 2)];
       const note = Math.round(median);
       if (!reading || note !== reading.note) {
         count = candidate === note ? count + 1 : 1; candidate = note;
-        if (count < 3) return reading;
+        if (count < 3) {
+          if (now - lastValid > 350) reading = null;
+          return reading;
+        }
         reading = { note, pitch: median, state: "waiting" };
       } else {
         candidate = null; count = 0;
@@ -84,6 +89,7 @@ export function createTunerTracker() {
       const cents = Math.round((reading.pitch - reading.note) * 100);
       const tolerance = reading.state === "in-tune" ? 7 : 4;
       const state = tunerState(cents, tolerance);
+      lastValid = now;
       reading = { ...reading, cents, state, frequency: 440 * 2 ** ((reading.pitch - 69) / 12) };
       return reading;
     }

@@ -365,12 +365,13 @@ $("audioLinkForm").onsubmit=async event=>{
     if(token!==importId||controller.signal.aborted)return;
     audioLinkAbort=null;importBusy=false;
     $("audioLinkStatus").textContent="Download complete. Checking audio…";
-    await importTake(file);
-    $("audioLinkStatus").textContent=$("sessionStatus").textContent;
+    const imported=importTake(file),decodeToken=importId;
+    await imported;
+    if(decodeToken===importId)$("audioLinkStatus").textContent=$("sessionStatus").textContent;
   }catch(error){
     if(token===importId)$("audioLinkStatus").textContent=(timedOut?"The download timed out.":error.name==="TypeError"?"This host does not allow Studio to download the audio.":error.message)+" Download the file yourself and use Choose Audio File. Your current take is unchanged.";
   }finally{
-    clearTimeout(timeout);
+    clearTimeout(timeout);controller.abort();
     if(audioLinkAbort===controller){audioLinkAbort=null;importBusy=false;syncControls()}
   }
 };

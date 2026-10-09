@@ -17,10 +17,14 @@ export function parseAudioLink(value) {
 
 export async function fetchAudioLink(url, { signal, fetchImpl = fetch } = {}) {
   const response = await fetchImpl(url, { signal, credentials: "omit", referrerPolicy: "no-referrer" });
-  if (!response.ok) throw new Error("The audio host returned an error. Download the file and use Choose Audio File.");
+  const rejectResponse = async message => {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(message);
+  };
+  if (!response.ok) return rejectResponse("The audio host returned an error. Download the file and use Choose Audio File.");
   const type = (response.headers.get("content-type") || "").split(";")[0].toLowerCase();
-  if (/html|json|xml/.test(type)) throw new Error("This link opens a page, not an audio file. Download the audio there, then use Choose Audio File.");
-  if (Number(response.headers.get("content-length")) > MAX_AUDIO_BYTES) throw new Error("This file is larger than 150 MB.");
+  if (/html|json|xml/.test(type)) return rejectResponse("This link opens a page, not an audio file. Download the audio there, then use Choose Audio File.");
+  if (Number(response.headers.get("content-length")) > MAX_AUDIO_BYTES) return rejectResponse("This file is larger than 150 MB.");
   if (!response.body) throw new Error("No downloadable audio was returned.");
   const reader = response.body.getReader(), parts = [];
   let size = 0;

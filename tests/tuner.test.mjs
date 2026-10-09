@@ -68,3 +68,21 @@ test('tracker settles on a changed note and hysteresis prevents sharp/in-tune ch
   for(let t=3100;t<3800;t+=100)tracker.update(330,t);
   assert.equal(tracker.update(330,3800).note,64);
 });
+
+test('unsettled candidate notes cannot keep an old in-tune reading alive',()=>{
+  const tracker=createTunerTracker();
+  tracker.update(110,0);tracker.update(110,100);tracker.update(110,200);
+  for(let t=300;t<=5000;t+=100){
+    const reading=tracker.update(t%200?220:330,t);
+    if(t>=800)assert.equal(reading,null);
+  }
+});
+
+test('advertised tuner range edges remain detectable',()=>{
+  for(const rate of [44100,48000,96000])for(const frequency of [55,1400]){
+    const samples=Float32Array.from({length:4096},(_,i)=>.3*Math.sin(2*Math.PI*frequency*i/rate));
+    const detected=autoCorrelate(samples,rate);
+    assert.ok(detected>=55&&detected<=1400);
+    assert.ok(Math.abs(1200*Math.log2(detected/frequency))<5);
+  }
+});
