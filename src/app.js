@@ -339,6 +339,11 @@ function cancelAudioLink(message="") {
   syncControls();
 }
 $("cancelAudioLink").onclick=()=>cancelAudioLink("Link import canceled. Your current take is unchanged.");
+$("getDriveAudio").onclick=()=>{
+  $("driveReturnHelp").hidden=false;
+  $("audioLink").focus();
+  $("audioLink").scrollIntoView({block:"nearest",behavior:"smooth"});
+};
 $("audioLink").oninput=()=>{
   cancelAudioLink("Link changed. Press Use Audio Link when ready.");
   $("driveAudioLink").hidden=true;$("driveAudioLink").removeAttribute("href");
@@ -351,7 +356,7 @@ $("audioLinkForm").onsubmit=async event=>{
   try{link=parseAudioLink($("audioLink").value)}
   catch(error){$("audioLinkStatus").textContent=error.message;return}
   if(link.kind==="drive"){
-    drive.href=link.url;drive.hidden=false;
+    drive.href=link.url;drive.hidden=false;$("driveReturnHelp").hidden=false;
     $("audioLinkStatus").textContent="Drive link recognized. Open the file below, download the audio, then return and use Choose Audio File or Browse all files. Studio cannot sign in to Drive for you. Your current take is unchanged.";
     return;
   }
