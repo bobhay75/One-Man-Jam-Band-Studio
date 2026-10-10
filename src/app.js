@@ -1,4 +1,4 @@
-import { autoCorrelate, frequencyToNote, noteName, centsOff, tunerState } from "./tuner.js";
+import { autoCorrelate, noteName, createTunerTracker, TUNER_INTERVAL_MS } from "./tuner.js";
 import { createProject, setSource } from "./project.js";
 import { analyzeAudioBuffer } from "./analyze.js";
 import { buildArrangement } from "./arranger.js";
@@ -12,7 +12,10 @@ import { buildWaveformPeaks, selectionToRegion, drawWaveform } from "./waveform.
 import { checkAceStep, submitLego, waitForTask, fetchGeneratedAudio, defaultCaption } from "./providers/acestep.js";
 import { EXTRA_TRACKS, TRACK_NAMES, AUDIO_ACCEPT, audioIdentity, matchesSource, validateChords, mediaError } from "./session.js";
 
+import { parseAudioLink, fetchAudioLink } from "./audio-link.js";
+
 let project = createProject();
+let audioLinkAbort = null;
 let audioCtx, analyser, micStream, raf;
 let loadedArrayBuffer = null, decodedBuffer = null, renderedBuffer = null, mixUrl = null, currentAudioName = null;
 let waveformPeaks = null, waveformDuration = 0, dragStartX = null;
@@ -167,6 +170,7 @@ function syncControls(){
   $("exportStemsBtn").disabled=$("renderBtn").disabled;
   $("recordBtn").disabled=busy;quickRecord.disabled=busy;
   $("startTuner").disabled=recordBusy||tunerStarting||!!micStream;
+  $("openAudioLink").disabled=busy;$("cancelAudioLink").disabled=!audioLinkAbort;
   $("audioFile").disabled=recordBusy;$("audioFileAll").disabled=recordBusy;
   $("projectFile").disabled=busy;$("recordTarget").disabled=busy;
   $("saveOriginalBtn").disabled=!sourceBlob||busy;
@@ -235,6 +239,7 @@ async function runNeural(stems){
 
 function resetTuner(){
   $("note").textContent="--";$("freq").textContent="0.0 Hz";$("cents").textContent="0 cents";
+  $("tunerAnnouncement").textContent="Play one note and let it ring.";
   $("tunerTarget").textContent="Target: --";$("tunerStatus").textContent="PLAY A NOTE";
   document.querySelector(".tuner-card").dataset.state="waiting";
   $("tunerNeedle").style.transform="translateX(-50%) rotate(0deg)";
@@ -250,21 +255,30 @@ async function startTuner(){
     if(epoch!==tunerEpoch){stream.getTracks().forEach(t=>t.stop());return}
     micStream=stream;
     const source=audioCtx.createMediaStreamSource(micStream);analyser=audioCtx.createAnalyser();analyser.fftSize=4096;source.connect(analyser);
-    const buf=new Float32Array(analyser.fftSize);
-    const tick=()=>{
-      analyser.getFloatTimeDomainData(buf);const freq=autoCorrelate(buf,audioCtx.sampleRate);
-      if(freq>0){
-        const n=frequencyToNote(freq),cents=centsOff(freq,n),state=tunerState(cents);
+    const buf=new Float32Array(analyser.fftSize),tracker=createTunerTracker();
+    let lastAnalysis=-Infinity,lastAnnouncement="";
+    const tick=(now)=>{
+      if(epoch!==tunerEpoch)return;
+      raf=requestAnimationFrame(tick);
+      if(now-lastAnalysis<TUNER_INTERVAL_MS)return;
+      lastAnalysis=now;
+      analyser.getFloatTimeDomainData(buf);
+      const reading=tracker.update(autoCorrelate(buf,audioCtx.sampleRate),now);
+      if(reading){
+        const {note:n,cents,state,frequency:freq}=reading;
         $("note").textContent=noteName(n);$("freq").textContent=freq.toFixed(1)+" Hz";
         $("cents").textContent=(cents>0?"+":"")+cents+" cents";
         $("tunerTarget").textContent="Target: "+(440*Math.pow(2,(n-69)/12)).toFixed(1)+" Hz";
         $("tunerStatus").textContent=state==="in-tune"?"IN TUNE":state==="flat"?"TOO FLAT — tighten string":"TOO SHARP — loosen string";
         document.querySelector(".tuner-card").dataset.state=state;
         $("tunerNeedle").style.transform="translateX(-50%) rotate("+Math.max(-42,Math.min(42,cents*.84))+"deg)";
-      }else resetTuner();
-      raf=requestAnimationFrame(tick);
+        const announcement=noteName(n)+": "+$("tunerStatus").textContent;
+        if(announcement!==lastAnnouncement){$("tunerAnnouncement").textContent=announcement;lastAnnouncement=announcement}
+      }else if(lastAnnouncement!=="waiting"){
+        resetTuner();lastAnnouncement="waiting";
+      }
     };
-    tick();$("stopTuner").disabled=false;
+    raf=requestAnimationFrame(tick);$("stopTuner").disabled=false;
   }catch(e){if(epoch===tunerEpoch){stopTuner();report(mediaError(e))}}
   finally{tunerStarting=false;$("startTuner").disabled=recordBusy||!!micStream}
 }
@@ -275,7 +289,8 @@ function stopTuner(){
 }
 $("startTuner").onclick=startTuner;$("stopTuner").onclick=stopTuner;
 
-async function importTake(file,target="source"){
+async function importTake(file,target="source",fromLink=false){
+  if(!fromLink)cancelAudioLink("Link import replaced by a newer take.");
   const token=++importId;importBusy=true;invalidateRender();syncControls();report("Opening "+file.name+"…");
   try{
     if(!file.size)throw new Error("This file is empty. Choose a recording with audio.");
@@ -316,6 +331,56 @@ for(const id of ["audioFile","audioFileAll"]){
   input.onchange=()=>{const file=input.files?.[0];input.value="";if(file)void importTake(file)};
   input.addEventListener("cancel",()=>report("File selection canceled. Your current take is unchanged."));
 }
+
+function cancelAudioLink(message="") {
+  if(!audioLinkAbort)return;
+  audioLinkAbort.abort();audioLinkAbort=null;importId++;importBusy=false;
+  if(message)$("audioLinkStatus").textContent=message;
+  syncControls();
+}
+$("cancelAudioLink").onclick=()=>cancelAudioLink("Link import canceled. Your current take is unchanged.");
+$("getDriveAudio").onclick=()=>{
+  $("driveReturnHelp").hidden=false;
+  $("audioLink").focus();
+  $("audioLink").scrollIntoView({block:"nearest",behavior:"smooth"});
+};
+$("audioLink").oninput=()=>{
+  cancelAudioLink("Link changed. Press Use Audio Link when ready.");
+  $("driveAudioLink").hidden=true;$("driveAudioLink").removeAttribute("href");
+};
+$("audioLinkForm").onsubmit=async event=>{
+  event.preventDefault();
+  if(recordBusy||importBusy)return;
+  const drive=$("driveAudioLink");drive.hidden=true;drive.removeAttribute("href");
+  let link;
+  try{link=parseAudioLink($("audioLink").value)}
+  catch(error){$("audioLinkStatus").textContent=error.message;return}
+  if(link.kind==="drive"){
+    drive.href=link.url;drive.hidden=false;$("driveReturnHelp").hidden=false;
+    $("audioLinkStatus").textContent="Drive link recognized. Open the file below, download the audio, then return and use Choose Audio File or Browse all files. Studio cannot sign in to Drive for you. Your current take is unchanged.";
+    return;
+  }
+  const controller=new AbortController(),token=++importId;
+  audioLinkAbort=controller;importBusy=true;syncControls();
+  $("audioLinkStatus").textContent="Downloading audio…";
+  let timedOut=false;
+  const timeout=setTimeout(()=>{timedOut=true;controller.abort()},30000);
+  try{
+    const file=await fetchAudioLink(link.url,{signal:controller.signal});
+    if(token!==importId||controller.signal.aborted)return;
+    clearTimeout(timeout);
+    $("audioLinkStatus").textContent="Download complete. Checking audio…";
+    const imported=importTake(file,"source",true),decodeToken=importId;
+    await imported;
+    if(decodeToken===importId)$("audioLinkStatus").textContent=$("sessionStatus").textContent;
+  }catch(error){
+    if(token===importId)$("audioLinkStatus").textContent=(timedOut?"The download timed out.":error.name==="TypeError"?"This host does not allow Studio to download the audio.":error.message)+" Download the file yourself and use Choose Audio File. Your current take is unchanged.";
+  }finally{
+    clearTimeout(timeout);controller.abort();
+    if(audioLinkAbort===controller){audioLinkAbort=null;importBusy=false;syncControls()}
+  }
+};
+
 quickRecord?.addEventListener("click",()=>$("recordBtn").click());
 quickPlay?.addEventListener("click",async()=>{
   const player=$("player");
@@ -330,6 +395,7 @@ $("saveOriginalBtn").onclick=()=>{if(sourceBlob)downloadBlob(sourceBlob,currentA
 
 $("projectFile").onchange=async e=>{
   const file=e.target.files?.[0];e.target.value="";if(!file)return;
+  cancelAudioLink();
   const token=++importId;importBusy=true;syncControls();
   try{
     const next=deserializeProject(await file.text());if(token!==importId)return;
@@ -520,6 +586,7 @@ for(const id of EXTRA_TRACKS){
   };
   $(id+"Remove").onclick=()=>{clearTrack(id);delete project.tracks[id];invalidateRender();syncControls()};
 }
-window.addEventListener("pagehide",()=>{stopTuner();if(mediaRecorder?.state==="recording")mediaRecorder.stop();neuralAbort?.abort()});
+document.addEventListener("visibilitychange",()=>{if(document.hidden)stopTuner()});
+window.addEventListener("pagehide",()=>{cancelAudioLink();stopTuner();if(mediaRecorder?.state==="recording")mediaRecorder.stop();neuralAbort?.abort()});
 syncControls();
 clearWaveform();
