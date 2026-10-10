@@ -2,10 +2,16 @@ import { test, expect, wavFixture, uploadAudio, renderMix, downloadBytes, expect
 
 test('pasted Drive link offers a safe download step and preserves the current take',async({page})=>{
   await uploadAudio(page);
+  await page.getByRole("button",{name:"Get audio from Google Drive",exact:true}).click();
+  await expect(page.locator("#audioLink")).toBeFocused();
+  await expect(page.locator("#driveReturnHelp")).toBeVisible();
+  await expect(page.locator("#driveReturnHelp")).toContainText("Downloads");
   // Simulate the resulting input of a native paste without depending on OS clipboard permission.
   await page.locator('#audioLink').fill('https://drive.google.com/file/d/test_Audio-123456/view?resourcekey=0-test');
   await page.locator('#audioLink').press('Enter');
   await expect(page.locator('#audioLinkStatus')).toContainText('Drive link recognized');
+  await expect(page.getByRole("link",{name:"Open Drive to download",exact:true})).toBeVisible();
+  await expect(page.locator("#driveAudioLink")).toHaveAttribute("target","_blank");
   await expect(page.locator('#driveAudioLink')).toHaveAttribute('href','https://drive.google.com/file/d/test_Audio-123456/view?resourcekey=0-test');
   await expect(page.locator('#meta')).toContainText('acceptance-tone.wav');
   await expect(page.locator('#analyzeBtn')).toBeEnabled();
