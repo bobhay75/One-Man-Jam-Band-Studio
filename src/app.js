@@ -1,4 +1,4 @@
-import { autoCorrelate, frequencyToNote, noteName, centsOff, tunerState } from "./tuner.js";
+import { autoCorrelate, noteName, createTunerTracker, TUNER_INTERVAL_MS } from "./tuner.js";
 import { createProject, setSource } from "./project.js";
 import { analyzeAudioBuffer } from "./analyze.js";
 import { buildArrangement } from "./arranger.js";
@@ -12,14 +12,17 @@ import { buildWaveformPeaks, selectionToRegion, drawWaveform } from "./waveform.
 import { checkAceStep, submitLego, waitForTask, fetchGeneratedAudio, defaultCaption } from "./providers/acestep.js";
 import { EXTRA_TRACKS, TRACK_NAMES, AUDIO_ACCEPT, audioIdentity, matchesSource, validateChords, mediaError } from "./session.js";
 
+import { parseAudioLink, fetchAudioLink } from "./audio-link.js";
+
 let project = createProject();
+let audioLinkAbort = null;
 let audioCtx, analyser, micStream, raf;
 let loadedArrayBuffer = null, decodedBuffer = null, renderedBuffer = null, mixUrl = null, currentAudioName = null;
 let waveformPeaks = null, waveformDuration = 0, dragStartX = null;
 let neuralStemBuffers = {drums:null,bass:null,lead:null};
 let neuralStemUrls = {drums:null,bass:null,lead:null};
 let neuralAbort = null;
-let mediaRecorder = null;
+let mediaRecorder = null, recordingStream = null, recordingEpoch = 0;
 let revision = 0, sourceEpoch = 0, importId = 0, importBusy = false, recordBusy = false, renderBusy = false;
 let sourceUrl = null, sourceBlob = null, sourceIdentity = null, tunerStarting = false, tunerEpoch = 0;
 let trackBuffers = {}, trackUrls = {}, stemDownloadUrls = [];
@@ -162,11 +165,12 @@ function syncControls(){
   if(quickPlay)quickPlay.disabled=!loadedArrayBuffer||busy;
   const state1=$("trackState1");if(state1)state1.textContent=loadedArrayBuffer?(currentAudioName==="recording"?"Recorded take ready":"Imported take ready"):"Waiting for a take";
   $("analyzeBtn").disabled=!matching;
-  $("arrangeBtn").disabled=!(project.analysis&&matching);
+  $("arrangeBtn").disabled=!(project.analysis&&project.analysis.status!=="silent"&&project.analysis.status!=="low-confidence"&&matching);
   $("renderBtn").disabled=!(project.arrangement&&matching&&allAudioPresent())||renderBusy;
   $("exportStemsBtn").disabled=$("renderBtn").disabled;
   $("recordBtn").disabled=busy;quickRecord.disabled=busy;
   $("startTuner").disabled=recordBusy||tunerStarting||!!micStream;
+  $("openAudioLink").disabled=busy;$("cancelAudioLink").disabled=!audioLinkAbort;
   $("audioFile").disabled=recordBusy;$("audioFileAll").disabled=recordBusy;
   $("projectFile").disabled=busy;$("recordTarget").disabled=busy;
   $("saveOriginalBtn").disabled=!sourceBlob||busy;
@@ -235,6 +239,7 @@ async function runNeural(stems){
 
 function resetTuner(){
   $("note").textContent="--";$("freq").textContent="0.0 Hz";$("cents").textContent="0 cents";
+  $("tunerAnnouncement").textContent="Play one note and let it ring.";
   $("tunerTarget").textContent="Target: --";$("tunerStatus").textContent="PLAY A NOTE";
   document.querySelector(".tuner-card").dataset.state="waiting";
   $("tunerNeedle").style.transform="translateX(-50%) rotate(0deg)";
@@ -250,21 +255,30 @@ async function startTuner(){
     if(epoch!==tunerEpoch){stream.getTracks().forEach(t=>t.stop());return}
     micStream=stream;
     const source=audioCtx.createMediaStreamSource(micStream);analyser=audioCtx.createAnalyser();analyser.fftSize=4096;source.connect(analyser);
-    const buf=new Float32Array(analyser.fftSize);
-    const tick=()=>{
-      analyser.getFloatTimeDomainData(buf);const freq=autoCorrelate(buf,audioCtx.sampleRate);
-      if(freq>0){
-        const n=frequencyToNote(freq),cents=centsOff(freq,n),state=tunerState(cents);
+    const buf=new Float32Array(analyser.fftSize),tracker=createTunerTracker();
+    let lastAnalysis=-Infinity,lastAnnouncement="";
+    const tick=(now)=>{
+      if(epoch!==tunerEpoch)return;
+      raf=requestAnimationFrame(tick);
+      if(now-lastAnalysis<TUNER_INTERVAL_MS)return;
+      lastAnalysis=now;
+      analyser.getFloatTimeDomainData(buf);
+      const reading=tracker.update(autoCorrelate(buf,audioCtx.sampleRate),now);
+      if(reading){
+        const {note:n,cents,state,frequency:freq}=reading;
         $("note").textContent=noteName(n);$("freq").textContent=freq.toFixed(1)+" Hz";
         $("cents").textContent=(cents>0?"+":"")+cents+" cents";
         $("tunerTarget").textContent="Target: "+(440*Math.pow(2,(n-69)/12)).toFixed(1)+" Hz";
         $("tunerStatus").textContent=state==="in-tune"?"IN TUNE":state==="flat"?"TOO FLAT — tighten string":"TOO SHARP — loosen string";
         document.querySelector(".tuner-card").dataset.state=state;
         $("tunerNeedle").style.transform="translateX(-50%) rotate("+Math.max(-42,Math.min(42,cents*.84))+"deg)";
-      }else resetTuner();
-      raf=requestAnimationFrame(tick);
+        const announcement=noteName(n)+": "+$("tunerStatus").textContent;
+        if(announcement!==lastAnnouncement){$("tunerAnnouncement").textContent=announcement;lastAnnouncement=announcement}
+      }else if(lastAnnouncement!=="waiting"){
+        resetTuner();lastAnnouncement="waiting";
+      }
     };
-    tick();$("stopTuner").disabled=false;
+    raf=requestAnimationFrame(tick);$("stopTuner").disabled=false;
   }catch(e){if(epoch===tunerEpoch){stopTuner();report(mediaError(e))}}
   finally{tunerStarting=false;$("startTuner").disabled=recordBusy||!!micStream}
 }
@@ -275,7 +289,8 @@ function stopTuner(){
 }
 $("startTuner").onclick=startTuner;$("stopTuner").onclick=stopTuner;
 
-async function importTake(file,target="source"){
+async function importTake(file,target="source",fromLink=false){
+  if(!fromLink)cancelAudioLink("Link import replaced by a newer take.");
   const token=++importId;importBusy=true;invalidateRender();syncControls();report("Opening "+file.name+"…");
   try{
     if(!file.size)throw new Error("This file is empty. Choose a recording with audio.");
@@ -316,6 +331,56 @@ for(const id of ["audioFile","audioFileAll"]){
   input.onchange=()=>{const file=input.files?.[0];input.value="";if(file)void importTake(file)};
   input.addEventListener("cancel",()=>report("File selection canceled. Your current take is unchanged."));
 }
+
+function cancelAudioLink(message="") {
+  if(!audioLinkAbort)return;
+  audioLinkAbort.abort();audioLinkAbort=null;importId++;importBusy=false;
+  if(message)$("audioLinkStatus").textContent=message;
+  syncControls();
+}
+$("cancelAudioLink").onclick=()=>cancelAudioLink("Link import canceled. Your current take is unchanged.");
+$("getDriveAudio").onclick=()=>{
+  $("driveReturnHelp").hidden=false;
+  $("audioLink").focus();
+  $("audioLink").scrollIntoView({block:"nearest",behavior:"smooth"});
+};
+$("audioLink").oninput=()=>{
+  cancelAudioLink("Link changed. Press Use Audio Link when ready.");
+  $("driveAudioLink").hidden=true;$("driveAudioLink").removeAttribute("href");
+};
+$("audioLinkForm").onsubmit=async event=>{
+  event.preventDefault();
+  if(recordBusy||importBusy)return;
+  const drive=$("driveAudioLink");drive.hidden=true;drive.removeAttribute("href");
+  let link;
+  try{link=parseAudioLink($("audioLink").value)}
+  catch(error){$("audioLinkStatus").textContent=error.message;return}
+  if(link.kind==="drive"){
+    drive.href=link.url;drive.hidden=false;$("driveReturnHelp").hidden=false;
+    $("audioLinkStatus").textContent="Drive link recognized. Open the file below, download the audio, then return and use Choose Audio File or Browse all files. Studio cannot sign in to Drive for you. Your current take is unchanged.";
+    return;
+  }
+  const controller=new AbortController(),token=++importId;
+  audioLinkAbort=controller;importBusy=true;syncControls();
+  $("audioLinkStatus").textContent="Downloading audio…";
+  let timedOut=false;
+  const timeout=setTimeout(()=>{timedOut=true;controller.abort()},30000);
+  try{
+    const file=await fetchAudioLink(link.url,{signal:controller.signal});
+    if(token!==importId||controller.signal.aborted)return;
+    clearTimeout(timeout);
+    $("audioLinkStatus").textContent="Download complete. Checking audio…";
+    const imported=importTake(file,"source",true),decodeToken=importId;
+    await imported;
+    if(decodeToken===importId)$("audioLinkStatus").textContent=$("sessionStatus").textContent;
+  }catch(error){
+    if(token===importId)$("audioLinkStatus").textContent=(timedOut?"The download timed out.":error.name==="TypeError"?"This host does not allow Studio to download the audio.":error.message)+" Download the file yourself and use Choose Audio File. Your current take is unchanged.";
+  }finally{
+    clearTimeout(timeout);controller.abort();
+    if(audioLinkAbort===controller){audioLinkAbort=null;importBusy=false;syncControls()}
+  }
+};
+
 quickRecord?.addEventListener("click",()=>$("recordBtn").click());
 quickPlay?.addEventListener("click",async()=>{
   const player=$("player");
@@ -330,6 +395,7 @@ $("saveOriginalBtn").onclick=()=>{if(sourceBlob)downloadBlob(sourceBlob,currentA
 
 $("projectFile").onchange=async e=>{
   const file=e.target.files?.[0];e.target.value="";if(!file)return;
+  cancelAudioLink();
   const token=++importId;importBusy=true;syncControls();
   try{
     const next=deserializeProject(await file.text());if(token!==importId)return;
@@ -353,7 +419,8 @@ $("saveProjectBtn").onclick=()=>{
 
 $("recordBtn").onclick=async()=>{
   if(recordBusy||importBusy)return;
-  recordBusy=true;syncControls();stopTuner();stopPlayback();
+  const epoch=++recordingEpoch;
+  recordBusy=true;syncControls();$("stopRecordBtn").disabled=false;stopTuner();stopPlayback();
   const target=$("recordTarget").value;
   let stream;
   try{
@@ -361,13 +428,17 @@ $("recordBtn").onclick=async()=>{
     if(target!=="source"&&!loadedArrayBuffer)throw new Error("Load or record the original take before recording another track.");
     report("Waiting for microphone permission…");
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    if(epoch!==recordingEpoch){stream.getTracks().forEach(t=>t.stop());return}
+    recordingStream=stream;
     const mimeType=["audio/webm;codecs=opus","audio/mp4","audio/ogg;codecs=opus"].find(t=>MediaRecorder.isTypeSupported(t));
     const recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined),parts=[];let failed=false;
     mediaRecorder=recorder;
-    recorder.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};
-    recorder.onerror=e=>{failed=true;report("Recording failed. "+mediaError(e.error));stream.getTracks().forEach(t=>t.stop());recordBusy=false;$("stopRecordBtn").disabled=true;syncControls()};
+    recorder.ondataavailable=e=>{if(epoch===recordingEpoch&&e.data.size)parts.push(e.data)};
+    recorder.onerror=e=>{stream.getTracks().forEach(t=>t.stop());if(epoch!==recordingEpoch)return;failed=true;report("Recording failed. "+mediaError(e.error));stream.getTracks().forEach(t=>t.stop());recordBusy=false;$("stopRecordBtn").disabled=true;syncControls()};
     recorder.onstop=async()=>{
-      stream.getTracks().forEach(t=>t.stop());mediaRecorder=null;
+      stream.getTracks().forEach(t=>t.stop());
+      if(epoch!==recordingEpoch)return;
+      mediaRecorder=null;recordingStream=null;
       if(failed)return;
       const type=recorder.mimeType||parts[0]?.type||"audio/webm",ext=type.includes("mp4")?"m4a":type.includes("ogg")?"ogg":"webm";
       const blob=new File(parts,[target,"recording",Date.now()].join("-")+"."+ext,{type});
@@ -375,10 +446,19 @@ $("recordBtn").onclick=async()=>{
       await importTake(blob,target);syncControls();
     };
     recorder.start(250);$("stopRecordBtn").disabled=false;report("Recording "+(TRACK_NAMES[target]||"Original")+"… Press Stop when finished.");
-  }catch(e){stream?.getTracks().forEach(t=>t.stop());recordBusy=false;syncControls();report(mediaError(e))}
+  }catch(e){stream?.getTracks().forEach(t=>t.stop());if(epoch!==recordingEpoch)return;recordingStream=null;recordBusy=false;$("stopRecordBtn").disabled=true;syncControls();report(mediaError(e))}
 };
+function cancelRecording(){
+  recordingEpoch++;
+  recordingStream?.getTracks().forEach(t=>t.stop());recordingStream=null;
+  const recorder=mediaRecorder;mediaRecorder=null;
+  if(recorder?.state==="recording")recorder.stop();
+  recordBusy=false;$("stopRecordBtn").disabled=true;syncControls();
+  report("Recording canceled. Your current take is unchanged.");
+}
 $("stopRecordBtn").onclick=()=>{
   if(mediaRecorder?.state==="recording"){ $("stopRecordBtn").disabled=true;report("Finishing recording…");mediaRecorder.stop() }
+  else if(recordBusy)cancelRecording();
 };
 
 
@@ -389,6 +469,10 @@ $("analyzeBtn").onclick=async()=>{
     const decoded=await decodeCurrent(),analysis=await analyzeAudioBuffer(decoded);
     if(epoch!==sourceEpoch)return;
     project.analysis=analysis;syncControls();
+    if(analysis.status!=="ready"){
+      $("arrangement").textContent="No reliable musical analysis. Choose another take or enter a reviewed chord timeline.";
+      report(analysis.status==="silent"?"This take is silent or too quiet to analyze. No backing band was generated.":"Musical analysis has low confidence. Review or enter chords before generating a band.");return;
+    }
     $("arrangement").textContent="Analysis complete. Generate an arrangement.";
     report("Analysis complete. Review the estimated tempo and chords; set the first beat if the take starts with silence or a count-in.");
   }catch(e){report(mediaError(e))}
@@ -398,7 +482,8 @@ $("analyzeBtn").onclick=async()=>{
 $("applyChordsBtn").onclick=()=>{
   try{
     const timeline=validateChords(JSON.parse($("chordEditor").value),decodedBuffer?.duration??Infinity);
-    project.analysis={...project.analysis,chordTimeline:timeline};$("chordStatus").textContent=`Applied ${timeline.length} chord regions.`;invalidateArrangement();
+    if(!timeline.length)throw new Error("Enter at least one reviewed chord region.");
+    project.analysis={...project.analysis,status:"ready",chordTimeline:timeline};$("chordStatus").textContent=`Applied ${timeline.length} chord regions.`;invalidateArrangement();syncControls();
   }catch(e){$("chordStatus").textContent=e.message}
 };
 
@@ -431,6 +516,7 @@ $("arrangeBtn").onclick=async()=>{
   const epoch=sourceEpoch;
   try{
     const decoded=await decodeCurrent();if(epoch!==sourceEpoch)return;
+    if(["silent","low-confidence"].includes(project.analysis?.status))throw new Error("Review the musical analysis or enter chords before generating a band.");
     const a=project.analysis,bpm=Number($("tempoBpm").value),offsetSec=Number($("beatOffset").value),seed=Number($("seed").value);
     if(!Number.isFinite(bpm)||bpm<40||bpm>220||!Number.isFinite(offsetSec)||offsetSec<0||offsetSec>=decoded.duration||!Number.isInteger(seed)||seed<1)throw new Error("Use a tempo from 40 to 220 BPM, a first beat within the take, and a positive whole-number seed.");
     project.timing={bpm,offsetSec};project.seed=seed;
@@ -520,6 +606,7 @@ for(const id of EXTRA_TRACKS){
   };
   $(id+"Remove").onclick=()=>{clearTrack(id);delete project.tracks[id];invalidateRender();syncControls()};
 }
-window.addEventListener("pagehide",()=>{stopTuner();if(mediaRecorder?.state==="recording")mediaRecorder.stop();neuralAbort?.abort()});
+document.addEventListener("visibilitychange",()=>{if(document.hidden)stopTuner()});
+window.addEventListener("pagehide",()=>{cancelAudioLink();stopTuner();cancelRecording();neuralAbort?.abort()});
 syncControls();
 clearWaveform();
