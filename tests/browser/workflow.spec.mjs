@@ -237,3 +237,42 @@ test.describe('microphone paths',()=>{
     await page.evaluate(()=>window.testContext.close());
   });
 });
+
+test.describe('pending recording permission lifecycle',()=>{
+ test.use({expectedMicRequests:1});
+ for(const action of ['stop','pagehide'])test(action+' releases late microphone without starting a recorder',async({page})=>{
+  await uploadAudio(page);
+  await page.evaluate(()=>{
+   window.recordStarts=0;
+   const start=MediaRecorder.prototype.start;
+   MediaRecorder.prototype.start=function(...args){window.recordStarts++;return start.apply(this,args)};
+   navigator.mediaDevices.getUserMedia=()=>{
+    window.__acceptanceMicRequests++;
+    return new Promise(resolve=>window.resolveRecordingPermission=()=>{
+     window.pendingMicContext=new AudioContext();
+     window.pendingMicStream=window.pendingMicContext.createMediaStreamDestination().stream;
+     resolve(window.pendingMicStream);
+    });
+   };
+  });
+  await page.locator('#recordBtn').click();
+  await expect(page.locator('#stopRecordBtn')).toBeEnabled();
+  if(action==='pagehide')await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+  else await page.locator('#stopRecordBtn').click();
+  await expect(page.locator('#recordBtn')).toBeEnabled();
+  await page.evaluate(()=>window.resolveRecordingPermission());
+  await expect.poll(()=>page.evaluate(()=>window.pendingMicStream.getTracks().every(t=>t.readyState==='ended'))).toBe(true);
+  expect(await page.evaluate(()=>window.recordStarts)).toBe(0);
+  await expect(page.locator('#meta')).toContainText('acceptance-tone.wav');
+  await expect(page.locator('#stopRecordBtn')).toBeDisabled();
+  await page.evaluate(()=>window.pendingMicContext.close());
+ });
+});
+
+test('silent audio cannot generate a default backing band',async({page})=>{
+ const silent=wavFixture();silent.fill(0,44);
+ await page.locator('#audioFile').setInputFiles({name:'silent.wav',mimeType:'audio/wav',buffer:silent});
+ await expect(page.locator('#analyzeBtn')).toBeEnabled();await page.locator('#analyzeBtn').click();
+ await expect(page.locator('#sessionStatus')).toContainText('silent');
+ await expect(page.locator('#arrangeBtn')).toBeDisabled();await expect(page.locator('#renderBtn')).toBeDisabled();
+});
