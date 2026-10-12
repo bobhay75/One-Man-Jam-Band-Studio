@@ -21,14 +21,14 @@ function corr(a,b){let am=0,bm=0;for(let i=0;i<12;i++){am+=a[i];bm+=b[i]}am/=12;
  let n=0,da=0,db=0;for(let i=0;i<12;i++){const x=a[i]-am,y=b[i]-bm;n+=x*y;da+=x*x;db+=y*y}return n/Math.sqrt(da*db||1)}
 function rotateProfile(profile,root){return Array.from({length:12},(_,i)=>profile[(i-root+12)%12])}
 export function inferKeyFromChroma(chroma){
- if(!chroma||chroma.length!==12)return null; let best={score:-Infinity,key:null};
+ if(!chroma||chroma.length!==12||!chroma.some(x=>Number.isFinite(x)&&x>0))return null; let best={score:-Infinity,key:null};
  for(let r=0;r<12;r++)for(const [mode,p] of [["major",MAJOR],["minor",MINOR]]){
    const score=corr(chroma,rotateProfile(p,r)); if(score>best.score)best={score,key:`${NOTE_NAMES[r]} ${mode}`};
  }
  return {key:best.key,confidence:+Math.max(0,best.score).toFixed(3)};
 }
 export function inferChordFromChroma(chroma){
- if(!chroma||chroma.length!==12)return null;
+ if(!chroma||chroma.length!==12||!chroma.some(x=>Number.isFinite(x)&&x>0))return null;
  const total=chroma.reduce((a,b)=>a+b,0)||1; let best={score:-Infinity,label:null,root:0,mode:"major"};
  for(let root=0;root<12;root++)for(const mode of ["major","minor"]){
    const third=(root+(mode==="major"?4:3))%12,fifth=(root+7)%12;
@@ -83,12 +83,22 @@ export function estimateChordTimeline(samples,sampleRate,{windowSec=1.5,stepSec=
  return merged;
 }
 export async function analyzeAudioBuffer(audioBuffer){
- const ch=audioBuffer.getChannelData(0); let peak=0,sum=0;
+ // Use the most energetic channel: averaging stereo can erase anti-phase music.
+ let ch=audioBuffer.getChannelData(0),analysisChannel=0,energy=-1;
+ for(let c=0;c<audioBuffer.numberOfChannels;c++){
+   const samples=audioBuffer.getChannelData(c);let e=0;for(const x of samples)e+=x*x;
+   if(e>energy){energy=e;ch=samples;analysisChannel=c}
+ }
+ let peak=0,sum=0;
  for(const x of ch){const a=Math.abs(x);if(a>peak)peak=a;sum+=x*x}
  const chroma=coarseChroma(ch,audioBuffer.sampleRate),key=inferKeyFromChroma(chroma);
  const regions=activityRegions(ch,audioBuffer.sampleRate);
+ const rms=Math.sqrt(sum/ch.length)||0;
+ const chords=rms>=0.001?estimateChordTimeline(ch,audioBuffer.sampleRate).filter(c=>c.confidence>=0.55):[];
+ const status=rms<0.001?"silent":(!key||key.confidence<0.2||!chords.length)?"low-confidence":"ready";
  return {durationSec:+audioBuffer.duration.toFixed(2),sampleRate:audioBuffer.sampleRate,channels:audioBuffer.numberOfChannels,
  peak:+peak.toFixed(4),rms:+Math.sqrt(sum/ch.length).toFixed(4),tempoBpm:estimateTempo(ch,audioBuffer.sampleRate),
- keyEstimate:key,chordTimeline:estimateChordTimeline(ch,audioBuffer.sampleRate),activityRegions:regions,
+ analysisChannel,status,
+ keyEstimate:status==="ready"?key:null,chordTimeline:chords,activityRegions:regions,
  speechReview:{status:"human-review-required",message:"Chord/audio regions are inferred locally. Speech/music ambiguity must be reviewed before final accompaniment."}};
 }
