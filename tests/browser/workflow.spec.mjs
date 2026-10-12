@@ -310,3 +310,19 @@ test.describe('recording request ownership',()=>{
   await page.evaluate(()=>Promise.all(window.micContexts.map(c=>c.close())));
  });
 });
+
+
+test('reviewed chords enable and generate backing after uncertain non-silent analysis',async({page})=>{
+ const uncertain=wavFixture();
+ for(let i=44;i<uncertain.length;i+=2)uncertain.writeInt16LE(3277,i);
+ await page.locator('#audioFile').setInputFiles({name:'uncertain.wav',mimeType:'audio/wav',buffer:uncertain});
+ await expect(page.locator('#analyzeBtn')).toBeEnabled();await page.locator('#analyzeBtn').click();
+ await expect(page.locator('#analysis')).toContainText('low-confidence');
+ await expect(page.locator('#arrangeBtn')).toBeDisabled();
+ await page.getByText('Edit detected chord timeline',{exact:true}).click();
+ await page.locator('#chordEditor').fill(JSON.stringify([{startSec:0,endSec:2,chord:'C',confidence:1,root:0,mode:'major'}]));
+ await page.locator('#applyChordsBtn').click();
+ await expect(page.locator('#arrangeBtn')).toBeEnabled();await page.locator('#arrangeBtn').click();
+ await expect(page.locator('#renderBtn')).toBeEnabled();
+ await expect(page.locator('#sessionStatus')).toContainText('Band ready');
+});
