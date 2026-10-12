@@ -483,7 +483,7 @@ $("applyChordsBtn").onclick=()=>{
   try{
     const timeline=validateChords(JSON.parse($("chordEditor").value),decodedBuffer?.duration??Infinity);
     if(!timeline.length)throw new Error("Enter at least one reviewed chord region.");
-    project.analysis={...project.analysis,status:"ready",chordTimeline:timeline};$("chordStatus").textContent=`Applied ${timeline.length} chord regions.`;invalidateArrangement();
+    project.analysis={...project.analysis,status:"ready",chordTimeline:timeline};$("chordStatus").textContent=`Applied ${timeline.length} chord regions.`;invalidateArrangement();syncControls();
   }catch(e){$("chordStatus").textContent=e.message}
 };
 
