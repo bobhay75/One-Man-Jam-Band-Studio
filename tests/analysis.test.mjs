@@ -31,7 +31,7 @@ test('opposite-phase stereo retains musical energy and chords',async()=>{
 });
 test('silent and nearly silent input has no inferred default key or chords',async()=>{
  for(const samples of [zero,Float32Array.from(tone,x=>x*0.0001)]){
- const a=await analyzeAudioBuffer(buffer([samples,samples]));assert.equal(a.status,'silent');assert.equal(a.keyEstimate,null);assert.deepEqual(a.chordTimeline,[]);
+ const a=await analyzeAudioBuffer(buffer([samples,samples]));assert.equal(a.status,'silent');assert.equal(a.tempoBpm,null);assert.equal(a.keyEstimate,null);assert.deepEqual(a.chordTimeline,[]);
  }
  assert.equal(inferKeyFromChroma(new Array(12).fill(0)),null);
 });
