@@ -276,3 +276,37 @@ test('silent audio cannot generate a default backing band',async({page})=>{
  await expect(page.locator('#sessionStatus')).toContainText('silent');
  await expect(page.locator('#arrangeBtn')).toBeDisabled();await expect(page.locator('#renderBtn')).toBeDisabled();
 });
+
+test.describe('recording request ownership',()=>{
+ test.use({expectedMicRequests:2});
+ for(const outcome of ['resolve','reject'])test('old permission '+outcome+' cannot reset a newer request',async({page})=>{
+  await uploadAudio(page);
+  await page.evaluate(()=>{
+   window.recordRequests=[];window.micContexts=[];window.micStreams=[];window.recordStarts=0;
+   const start=MediaRecorder.prototype.start;
+   MediaRecorder.prototype.start=function(...args){window.recordStarts++;return start.apply(this,args)};
+   navigator.mediaDevices.getUserMedia=()=>{
+    window.__acceptanceMicRequests++;
+    return new Promise((resolve,reject)=>window.recordRequests.push({resolve:()=>{
+     const ctx=new AudioContext();window.micContexts.push(ctx);
+     const stream=ctx.createMediaStreamDestination().stream;window.micStreams.push(stream);resolve(stream);
+    },reject:()=>reject(new DOMException('Denied','NotAllowedError'))}));
+   };
+  });
+  await page.locator('#recordBtn').click();await page.locator('#stopRecordBtn').click();
+  await page.locator('#recordBtn').click();
+  await page.evaluate(outcome=>window.recordRequests[0][outcome](),outcome);
+  await expect(page.locator('#recordBtn')).toBeDisabled();
+  await expect(page.locator('#stopRecordBtn')).toBeEnabled();
+  await expect(page.locator('#sessionStatus')).toContainText('Waiting for microphone permission');
+  if(outcome==='resolve')await expect.poll(()=>page.evaluate(()=>window.micStreams[0].getTracks().every(t=>t.readyState==='ended'))).toBe(true);
+  expect(await page.evaluate(()=>window.recordStarts)).toBe(0);
+  await page.evaluate(()=>window.recordRequests[1].resolve());
+  await expect(page.locator('#sessionStatus')).toContainText('Recording Original');
+  expect(await page.evaluate(()=>window.recordStarts)).toBe(1);
+  await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+  await expect.poll(()=>page.evaluate(()=>window.micStreams.every(s=>s.getTracks().every(t=>t.readyState==='ended')))).toBe(true);
+  await expect(page.locator('#meta')).toContainText('acceptance-tone.wav');
+  await page.evaluate(()=>Promise.all(window.micContexts.map(c=>c.close())));
+ });
+});
