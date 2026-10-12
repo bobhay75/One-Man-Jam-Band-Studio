@@ -97,7 +97,7 @@ export async function analyzeAudioBuffer(audioBuffer){
  const chords=rms>=0.001?estimateChordTimeline(ch,audioBuffer.sampleRate).filter(c=>c.confidence>=0.55):[];
  const status=rms<0.001?"silent":(!key||key.confidence<0.2||!chords.length)?"low-confidence":"ready";
  return {durationSec:+audioBuffer.duration.toFixed(2),sampleRate:audioBuffer.sampleRate,channels:audioBuffer.numberOfChannels,
- peak:+peak.toFixed(4),rms:+Math.sqrt(sum/ch.length).toFixed(4),tempoBpm:estimateTempo(ch,audioBuffer.sampleRate),
+ peak:+peak.toFixed(4),rms:+Math.sqrt(sum/ch.length).toFixed(4),tempoBpm:status==="silent"?null:estimateTempo(ch,audioBuffer.sampleRate),
  analysisChannel,status,
  keyEstimate:status==="ready"?key:null,chordTimeline:chords,activityRegions:regions,
  speechReview:{status:"human-review-required",message:"Chord/audio regions are inferred locally. Speech/music ambiguity must be reviewed before final accompaniment."}};
