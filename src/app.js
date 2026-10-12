@@ -22,7 +22,7 @@ let waveformPeaks = null, waveformDuration = 0, dragStartX = null;
 let neuralStemBuffers = {drums:null,bass:null,lead:null};
 let neuralStemUrls = {drums:null,bass:null,lead:null};
 let neuralAbort = null;
-let mediaRecorder = null;
+let mediaRecorder = null, recordingStream = null, recordingEpoch = 0;
 let revision = 0, sourceEpoch = 0, importId = 0, importBusy = false, recordBusy = false, renderBusy = false;
 let sourceUrl = null, sourceBlob = null, sourceIdentity = null, tunerStarting = false, tunerEpoch = 0;
 let trackBuffers = {}, trackUrls = {}, stemDownloadUrls = [];
@@ -165,7 +165,7 @@ function syncControls(){
   if(quickPlay)quickPlay.disabled=!loadedArrayBuffer||busy;
   const state1=$("trackState1");if(state1)state1.textContent=loadedArrayBuffer?(currentAudioName==="recording"?"Recorded take ready":"Imported take ready"):"Waiting for a take";
   $("analyzeBtn").disabled=!matching;
-  $("arrangeBtn").disabled=!(project.analysis&&matching);
+  $("arrangeBtn").disabled=!(project.analysis&&project.analysis.status!=="silent"&&project.analysis.status!=="low-confidence"&&matching);
   $("renderBtn").disabled=!(project.arrangement&&matching&&allAudioPresent())||renderBusy;
   $("exportStemsBtn").disabled=$("renderBtn").disabled;
   $("recordBtn").disabled=busy;quickRecord.disabled=busy;
@@ -419,7 +419,8 @@ $("saveProjectBtn").onclick=()=>{
 
 $("recordBtn").onclick=async()=>{
   if(recordBusy||importBusy)return;
-  recordBusy=true;syncControls();stopTuner();stopPlayback();
+  const epoch=++recordingEpoch;
+  recordBusy=true;syncControls();$("stopRecordBtn").disabled=false;stopTuner();stopPlayback();
   const target=$("recordTarget").value;
   let stream;
   try{
@@ -427,13 +428,17 @@ $("recordBtn").onclick=async()=>{
     if(target!=="source"&&!loadedArrayBuffer)throw new Error("Load or record the original take before recording another track.");
     report("Waiting for microphone permission…");
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    if(epoch!==recordingEpoch){stream.getTracks().forEach(t=>t.stop());return}
+    recordingStream=stream;
     const mimeType=["audio/webm;codecs=opus","audio/mp4","audio/ogg;codecs=opus"].find(t=>MediaRecorder.isTypeSupported(t));
     const recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined),parts=[];let failed=false;
     mediaRecorder=recorder;
-    recorder.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};
-    recorder.onerror=e=>{failed=true;report("Recording failed. "+mediaError(e.error));stream.getTracks().forEach(t=>t.stop());recordBusy=false;$("stopRecordBtn").disabled=true;syncControls()};
+    recorder.ondataavailable=e=>{if(epoch===recordingEpoch&&e.data.size)parts.push(e.data)};
+    recorder.onerror=e=>{stream.getTracks().forEach(t=>t.stop());if(epoch!==recordingEpoch)return;failed=true;report("Recording failed. "+mediaError(e.error));stream.getTracks().forEach(t=>t.stop());recordBusy=false;$("stopRecordBtn").disabled=true;syncControls()};
     recorder.onstop=async()=>{
-      stream.getTracks().forEach(t=>t.stop());mediaRecorder=null;
+      stream.getTracks().forEach(t=>t.stop());
+      if(epoch!==recordingEpoch)return;
+      mediaRecorder=null;recordingStream=null;
       if(failed)return;
       const type=recorder.mimeType||parts[0]?.type||"audio/webm",ext=type.includes("mp4")?"m4a":type.includes("ogg")?"ogg":"webm";
       const blob=new File(parts,[target,"recording",Date.now()].join("-")+"."+ext,{type});
@@ -441,10 +446,19 @@ $("recordBtn").onclick=async()=>{
       await importTake(blob,target);syncControls();
     };
     recorder.start(250);$("stopRecordBtn").disabled=false;report("Recording "+(TRACK_NAMES[target]||"Original")+"… Press Stop when finished.");
-  }catch(e){stream?.getTracks().forEach(t=>t.stop());recordBusy=false;syncControls();report(mediaError(e))}
+  }catch(e){stream?.getTracks().forEach(t=>t.stop());if(epoch!==recordingEpoch)return;recordingStream=null;recordBusy=false;$("stopRecordBtn").disabled=true;syncControls();report(mediaError(e))}
 };
+function cancelRecording(){
+  recordingEpoch++;
+  recordingStream?.getTracks().forEach(t=>t.stop());recordingStream=null;
+  const recorder=mediaRecorder;mediaRecorder=null;
+  if(recorder?.state==="recording")recorder.stop();
+  recordBusy=false;$("stopRecordBtn").disabled=true;syncControls();
+  report("Recording canceled. Your current take is unchanged.");
+}
 $("stopRecordBtn").onclick=()=>{
   if(mediaRecorder?.state==="recording"){ $("stopRecordBtn").disabled=true;report("Finishing recording…");mediaRecorder.stop() }
+  else if(recordBusy)cancelRecording();
 };
 
 
@@ -455,6 +469,10 @@ $("analyzeBtn").onclick=async()=>{
     const decoded=await decodeCurrent(),analysis=await analyzeAudioBuffer(decoded);
     if(epoch!==sourceEpoch)return;
     project.analysis=analysis;syncControls();
+    if(analysis.status!=="ready"){
+      $("arrangement").textContent="No reliable musical analysis. Choose another take or enter a reviewed chord timeline.";
+      report(analysis.status==="silent"?"This take is silent or too quiet to analyze. No backing band was generated.":"Musical analysis has low confidence. Review or enter chords before generating a band.");return;
+    }
     $("arrangement").textContent="Analysis complete. Generate an arrangement.";
     report("Analysis complete. Review the estimated tempo and chords; set the first beat if the take starts with silence or a count-in.");
   }catch(e){report(mediaError(e))}
@@ -464,7 +482,8 @@ $("analyzeBtn").onclick=async()=>{
 $("applyChordsBtn").onclick=()=>{
   try{
     const timeline=validateChords(JSON.parse($("chordEditor").value),decodedBuffer?.duration??Infinity);
-    project.analysis={...project.analysis,chordTimeline:timeline};$("chordStatus").textContent=`Applied ${timeline.length} chord regions.`;invalidateArrangement();
+    if(!timeline.length)throw new Error("Enter at least one reviewed chord region.");
+    project.analysis={...project.analysis,status:"ready",chordTimeline:timeline};$("chordStatus").textContent=`Applied ${timeline.length} chord regions.`;invalidateArrangement();
   }catch(e){$("chordStatus").textContent=e.message}
 };
 
@@ -497,6 +516,7 @@ $("arrangeBtn").onclick=async()=>{
   const epoch=sourceEpoch;
   try{
     const decoded=await decodeCurrent();if(epoch!==sourceEpoch)return;
+    if(["silent","low-confidence"].includes(project.analysis?.status))throw new Error("Review the musical analysis or enter chords before generating a band.");
     const a=project.analysis,bpm=Number($("tempoBpm").value),offsetSec=Number($("beatOffset").value),seed=Number($("seed").value);
     if(!Number.isFinite(bpm)||bpm<40||bpm>220||!Number.isFinite(offsetSec)||offsetSec<0||offsetSec>=decoded.duration||!Number.isInteger(seed)||seed<1)throw new Error("Use a tempo from 40 to 220 BPM, a first beat within the take, and a positive whole-number seed.");
     project.timing={bpm,offsetSec};project.seed=seed;
@@ -587,6 +607,6 @@ for(const id of EXTRA_TRACKS){
   $(id+"Remove").onclick=()=>{clearTrack(id);delete project.tracks[id];invalidateRender();syncControls()};
 }
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopTuner()});
-window.addEventListener("pagehide",()=>{cancelAudioLink();stopTuner();if(mediaRecorder?.state==="recording")mediaRecorder.stop();neuralAbort?.abort()});
+window.addEventListener("pagehide",()=>{cancelAudioLink();stopTuner();cancelRecording();neuralAbort?.abort()});
 syncControls();
 clearWaveform();
