@@ -237,7 +237,12 @@ function renderRegions(){
   if(waveformPeaks)drawWaveform($("waveformCanvas"),waveformPeaks,waveformDuration,project.regions||[]);
 }
 function arrangementSummary(){
-  const a=project.arrangement;if(!a)return "No arrangement generated.";
+  const a=project.arrangement;
+  if(!a){
+    if(project.analysis?.status==="ready")return "Analysis complete. Generate an arrangement.";
+    if(["silent","low-confidence"].includes(project.analysis?.status))return "No reliable musical analysis. Choose another take or enter a reviewed chord timeline.";
+    return "No arrangement generated.";
+  }
   const p=project.production||{};
   return JSON.stringify({
     bpm:a.bpm,key:a.key,bars:a.bars,chordAware:a.chordAware,
