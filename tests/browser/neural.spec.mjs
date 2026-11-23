@@ -75,8 +75,10 @@ test('same-name source replacement clears completed neural audio and cancels aud
   });
   await page.locator('[data-neural-generate="bass"]').click();
   await expect.poll(()=>page.evaluate(()=>typeof window.releaseNeuralDecode)).toBe('function');
-  await uploadAudio(page,'replacement.wav');await page.evaluate(()=>window.releaseNeuralDecode());
+  await expect(page.locator('#audioFile')).toBeDisabled();
+  await page.locator('#aceCancelBtn').click();await page.evaluate(()=>window.releaseNeuralDecode());
   await expect(page.locator('#aceStatus')).toHaveText('Neural render canceled.');
+  await uploadAudio(page,'replacement.wav');
   await expect(page.locator('[data-neural-state]')).toHaveText(['local','local','local']);
   await expect(page.locator('[data-neural-audio="bass"]')).not.toHaveAttribute('src');
 });

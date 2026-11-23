@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio · Vocal integration checks</title>
+<style>:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;background:#111318;color:#eff2f7}body{max-width:960px;margin:32px auto;padding:0 24px}h1{font-size:1.75rem;line-height:1.2}p{color:#b8c3d4}button{background:#cef578;color:#17220b;font:inherit;font-weight:700;border:0;border-radius:10px;padding:13px 21px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}#summary{padding:16px 20px;margin:24px 0;border-radius:10px;background:#1d232d;font-weight:700}li{padding:9px 0;white-space:pre-wrap;overflow-wrap:anywhere}.pass{color:#bdf39e}.fail{color:#ffa2ad}footer{color:#919eaf;font-size:.9rem;margin-top:30px}</style></head>
+<body><h1>VocalLift in One-Man Jam Band Studio</h1>
+<p>Checks the real enhancement and mix/stem rendering modules. These tests verify processed-buffer compatibility and dry restoration; use the actual Studio interface separately to verify buttons and file selection.</p>
+<button id="run" type="button">Run integration checks</button><div id="summary" role="status" aria-live="polite">Ready to run.</div><ol id="results"></ol>
+<footer>Deterministic synthetic signals only. No microphone, personal recordings, network processing, or playback. Remove this diagnostic page from the deployed app.</footer>
+<script type="module">
+const button=document.querySelector('#run'),summary=document.querySelector('#summary'),rows=document.querySelector('#results');
+let passed=0,failed=0;
+const RATE=24000;
+function assert(ok,message){if(!ok)throw new Error(message);}
+function makeBuffer(ctx,kind,seconds=1){
+ const b=ctx.createBuffer(1,Math.round(seconds*RATE),RATE),d=b.getChannelData(0);let seed=614093;
+ for(let i=0;i<d.length;i++){
+  const t=i/RATE,edge=Math.min(1,t/.01,(seconds-t)/.025);
+  if(kind==='guitar'){
+   const dt=t%.25,envelope=Math.min(1,dt/.003)*Math.exp(-dt*10);
+   d[i]=edge*envelope*(.12*Math.sin(2*Math.PI*110*t)+.05*Math.sin(2*Math.PI*220*t)+.026*Math.sin(2*Math.PI*440*t));
+  }else{
+   seed=(Math.imul(seed,1664525)+1013904223)>>>0;
+   const envelope=.25+.75*Math.sin(Math.PI*t/seconds)**2;
+   d[i]=edge*(envelope*(.18*Math.sin(2*Math.PI*196*t)+.075*Math.sin(2*Math.PI*392*t)+.022*Math.sin(2*Math.PI*1568*t))+.02*Math.sin(2*Math.PI*35*t)+(seed/4294967296*2-1)*.002);
+  }
+ }
+ return b;
+}
+function snapshot(b){return Array.from({length:b.numberOfChannels},(_,c)=>Float32Array.from(b.getChannelData(c)));}
+function sameSnapshot(b,s){if(b.numberOfChannels!==s.length)return false;for(let c=0;c<s.length;c++){const d=b.getChannelData(c);if(d.length!==s[c].length)return false;for(let i=0;i<d.length;i++)if(d[i]!==s[c][i])return false;}return true;}
+function difference(a,b){assert(a.length===b.length&&a.numberOfChannels===b.numberOfChannels,'Output dimensions differ');let sum=0,max=0;for(let c=0;c<a.numberOfChannels;c++){const x=a.getChannelData(c),y=b.getChannelData(c);for(let i=0;i<x.length;i++){const v=Math.abs(x[i]-y[i]);sum+=v;max=Math.max(max,v);}}return {mean:sum/(a.length*a.numberOfChannels),max};}
+function validate(b,seconds=1){assert(b.numberOfChannels===2,'Renderer did not return stereo');assert(b.sampleRate===RATE,'Sample rate changed');assert(b.length===Math.ceil(seconds*RATE),'Output duration changed');let peak=0;for(let c=0;c<2;c++)for(const x of b.getChannelData(c)){assert(Number.isFinite(x),'Nonfinite rendered sample');peak=Math.max(peak,Math.abs(x));}assert(peak<=.98003,'Renderer exceeded peak ceiling');return peak;}
+function expectedStem(rendered,input,offset=0){
+ const offsetFrames=Math.round(offset*RATE);let maxError=0;
+ for(let c=0;c<rendered.numberOfChannels;c++){
+  const d=rendered.getChannelData(c),source=input.getChannelData(Math.min(c,input.numberOfChannels-1));
+  for(let i=0;i<d.length;i++){
+   const j=i-offsetFrames,expected=j>=0&&j<source.length?source[j]*.9:0;
+   maxError=Math.max(maxError,Math.abs(d[i]-expected));
+  }
+ }
+ assert(maxError<3e-7,`Stem sample/offset mismatch: max error ${maxError}`);return maxError;
+}
+async function check(name,fn){const row=document.createElement('li');row.textContent='RUNNING · '+name;rows.append(row);try{const detail=await fn();passed++;row.className='pass';row.textContent='PASS · '+name+(detail?' — '+detail:'');}catch(e){failed++;row.className='fail';row.textContent='FAIL · '+name+' — '+(e?.message||e);}summary.textContent=`Running: ${passed} passed, ${failed} failed.`;}
+button.addEventListener('click',async()=>{
+ button.disabled=true;rows.replaceChildren();passed=0;failed=0;const started=performance.now();
+ try{
+  const [{PRESETS,enhanceAudio},{renderProjectMix,renderProjectStem},{createProject}]=await Promise.all([import('/src/vocal-engine.js'),import('/src/render.js'),import('/src/project.js')]);
+  const Offline=window.OfflineAudioContext||window.webkitOfflineAudioContext;assert(Offline,'OfflineAudioContext is unavailable');
+  const ctx=new Offline(2,RATE,RATE),source=makeBuffer(ctx,'guitar',1),vocal=makeBuffer(ctx,'vocal',.6);
+  const dryTracks={track6:vocal},sourceSnapshot=snapshot(source),vocalSnapshot=snapshot(vocal);
+  const project=createProject();
+  project.source={name:'synthetic-source.wav',durationSec:1,originalPreserved:true};
+  project.arrangement={durationSec:1,bpm:120,beatSec:.5,drums:[],bass:[],lead:[],seed:1};
+  project.timing={bpm:120,offsetSec:.125};
+  project.tracks={track6:{gain:.78,offsetSec:.25,name:'Synthetic vocal'}};
+  project.mix={sourceGain:.65,drumsGain:0,bassGain:0,leadGain:0,masterGain:.7};
+  project.mastering={preset:'natural',room:0};
+  project.production={drumStyle:'studio',bassStyle:'round',leadStyle:'clean',timingMs:0,velocityJitter:0,swing:0};
+  const projectSnapshot=JSON.stringify(project);
+  const settings={...PRESETS.find(p=>p.id==='singing').settings,space:20};
+  let processedSource,processedVocal,dryMix,wetTrackMix,wetSourceMix,wetBothMix;
+  await check('Source and track-six enhancement preserve duration, rate and original samples',async()=>{
+   processedSource=(await enhanceAudio(source,settings)).buffer;
+   processedVocal=(await enhanceAudio(vocal,settings)).buffer;
+   for(const [raw,wet] of [[source,processedSource],[vocal,processedVocal]])assert(raw.length===wet.length&&raw.sampleRate===wet.sampleRate&&raw.numberOfChannels===wet.numberOfChannels,'Enhancer changed source dimensions');
+   assert(sameSnapshot(source,sourceSnapshot)&&sameSnapshot(vocal,vocalSnapshot),'Enhancer modified original samples');
+   return 'Raw guitar and raw vocal remain immutable';
+  });
+  await check('Existing dry render remains valid',async()=>{dryMix=await renderProjectMix(source,project,{},dryTracks);const peak=validate(dryMix);return `Stereo ${dryMix.duration.toFixed(2)}s; peak ${peak.toFixed(4)}`;});
+  await check('Processed track-six vocal reaches the actual mix',async()=>{
+   wetTrackMix=await renderProjectMix(source,project,{}, {track6:processedVocal});validate(wetTrackMix);
+   const delta=difference(dryMix,wetTrackMix);assert(delta.mean>1e-5,'Processed vocal did not change the resulting mix');return `Mean audio change ${delta.mean.toFixed(6)}`;
+  });
+  await check('Processed main source reaches the actual mix',async()=>{
+   wetSourceMix=await renderProjectMix(processedSource,project,{},dryTracks);validate(wetSourceMix);
+   const delta=difference(dryMix,wetSourceMix);assert(delta.mean>1e-5,'Processed source did not change the resulting mix');return `Mean audio change ${delta.mean.toFixed(6)}`;
+  });
+  await check('Processed source and processed vocal can render together',async()=>{
+   wetBothMix=await renderProjectMix(processedSource,project,{}, {track6:processedVocal});validate(wetBothMix);
+   assert(difference(wetBothMix,wetTrackMix).mean>1e-5,'Source processing was lost');assert(difference(wetBothMix,wetSourceMix).mean>1e-5,'Vocal processing was lost');return 'Both chosen buffers contribute';
+  });
+  await check('Restoring both dry buffers restores the original mix',async()=>{
+   const restored=await renderProjectMix(source,project,{},dryTracks);validate(restored);
+   const delta=difference(dryMix,restored);assert(delta.max<2e-7,'Dry restoration changed original output');return `Maximum error ${delta.max}`;
+  });
+  await check('Zero-effect processing renders identically to the dry session',async()=>{
+   const zeroSource=(await enhanceAudio(source,{...settings,mix:0})).buffer;
+   const zeroVocal=(await enhanceAudio(vocal,{...settings,mix:0})).buffer;
+   assert(sameSnapshot(zeroSource,sourceSnapshot)&&sameSnapshot(zeroVocal,vocalSnapshot),'Zero effect changed source samples');
+   const mix=await renderProjectMix(zeroSource,project,{}, {track6:zeroVocal});const delta=difference(dryMix,mix);assert(delta.max<2e-7,'Zero-effect mix differs from the original');return 'Sample-equivalent mix';
+  });
+  await check('Processed vocal stem includes its chosen buffer at the saved positive offset',async()=>{
+   const stem=await renderProjectStem(source,project,'track6',{}, {track6:processedVocal});validate(stem);expectedStem(stem,processedVocal,.25);
+   const d=stem.getChannelData(0);for(let i=0;i<.25*RATE;i++)assert(d[i]===0,'Vocal started before its stored offset');return 'Exactly 0.250s offset; expected 0.9 stem gain';
+  });
+  await check('Dry vocal stem exports remain available and unchanged',async()=>{
+   const stem=await renderProjectStem(source,project,'track6',{},dryTracks);validate(stem);expectedStem(stem,vocal,.25);return 'Original vocal stem matches raw take';
+  });
+  await check('Negative track offsets keep the same trim with processed audio',async()=>{
+   const shifted={...project,tracks:{...project.tracks,track6:{...project.tracks.track6,offsetSec:-.1}}};
+   const stem=await renderProjectStem(source,shifted,'track6',{}, {track6:processedVocal});validate(stem);expectedStem(stem,processedVocal,-.1);return 'First 0.100s trimmed without moving metadata';
+  });
+  await check('Selected processed source stem contains processed samples at source time zero',async()=>{
+   const stem=await renderProjectStem(processedSource,project,'original',{},dryTracks);validate(stem);expectedStem(stem,processedSource,0);return 'Renderer source stem follows the supplied buffer';
+  });
+  await check('Original source stem still matches the preserved raw buffer',async()=>{
+   const stem=await renderProjectStem(source,project,'original',{},dryTracks);validate(stem);expectedStem(stem,source,0);return 'Raw export has an independent unchanged input';
+  });
+  await check('New settings cannot mutate raw audio or a previously processed result',async()=>{
+   const wetSnapshot=snapshot(processedVocal);
+   const changed={...settings,warmth:95,clarity:0,space:0,level:15};
+   const alternate=(await enhanceAudio(vocal,changed)).buffer;
+   assert(difference(alternate,processedVocal).mean>1e-5,'Changed settings did not produce different samples');
+   assert(sameSnapshot(processedVocal,wetSnapshot),'Reprocessing modified an existing processed buffer');
+   assert(sameSnapshot(source,sourceSnapshot)&&sameSnapshot(vocal,vocalSnapshot),'Setting changes modified original audio');return 'Independent new result';
+  });
+  await check('Project timing, offsets, arrangement and raw buffer references remain unchanged',()=>{
+   assert(JSON.stringify(project)===projectSnapshot,'Project metadata was mutated');
+   assert(dryTracks.track6===vocal,'Original track map was changed');
+   assert(sameSnapshot(source,sourceSnapshot)&&sameSnapshot(vocal,vocalSnapshot),'Original samples changed during rendering');return 'All metadata and original samples preserved';
+  });
+ }catch(e){failed++;const row=document.createElement('li');row.className='fail';row.textContent='FAIL · Harness setup — '+(e?.stack||e);rows.append(row);}
+ const elapsed=((performance.now()-started)/1000).toFixed(2);summary.textContent=`${failed?'FAIL':'PASS'}: ${passed} checks passed, ${failed} failed in ${elapsed}s.`;summary.dataset.passed=String(passed);summary.dataset.failed=String(failed);button.disabled=false;
+});
+</script></body></html>

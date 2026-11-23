@@ -1,38 +1,44 @@
+// Bounded YIN difference detector. Downsample to about 22–24 kHz so microphone
+// analysis stays small; the supported chromatic range is 55–1400 Hz.
+export const TUNER_INTERVAL_MS = 100;
 export function autoCorrelate(buffer, sampleRate) {
-  let rms = 0;
-  for (let i = 0; i < buffer.length; i++) rms += buffer[i] * buffer[i];
-  rms = Math.sqrt(rms / buffer.length);
-  if (rms < 0.01) return -1;
-
-  let r1 = 0, r2 = buffer.length - 1, threshold = 0.2;
-  for (let i = 0; i < buffer.length / 2; i++) {
-    if (Math.abs(buffer[i]) < threshold) { r1 = i; break; }
+  if (!Number.isFinite(sampleRate) || sampleRate < 8000 || buffer.length < 128) return -1;
+  const stride = Math.max(1, Math.floor(sampleRate / 22050));
+  const rate = sampleRate / stride, length = Math.floor(buffer.length / stride);
+  const samples = new Float32Array(length);
+  let mean = 0;
+  for (let i = 0; i < length; i++) {
+    let sum = 0;
+    for (let j = 0; j < stride; j++) sum += buffer[i * stride + j];
+    samples[i] = sum / stride; mean += samples[i];
   }
-  for (let i = 1; i < buffer.length / 2; i++) {
-    if (Math.abs(buffer[buffer.length - i]) < threshold) { r2 = buffer.length - i; break; }
+  mean /= length;
+  let energy = 0;
+  for (let i = 0; i < length; i++) { samples[i] -= mean; energy += samples[i] ** 2; }
+  if (!Number.isFinite(energy) || Math.sqrt(energy / length) < .003) return -1;
+  const minLag = Math.max(2, Math.floor(rate / 1400));
+  const maxLag = Math.min(Math.ceil(rate / 55), Math.floor(length / 2));
+  const window = length - maxLag - 1, difference = new Float64Array(maxLag + 1);
+  let total = 0;
+  for (let lag = 1; lag <= maxLag; lag++) {
+    let sum = 0;
+    for (let i = 0; i < window; i++) sum += (samples[i] - samples[i + lag]) ** 2;
+    total += sum; difference[lag] = total > 0 ? sum * lag / total : 1;
   }
-  buffer = buffer.slice(r1, r2);
-
-  const c = new Array(buffer.length).fill(0);
-  for (let lag = 0; lag < buffer.length; lag++) {
-    for (let i = 0; i < buffer.length - lag; i++) c[lag] += buffer[i] * buffer[i + lag];
+  // First confident trough selects the fundamental rather than a later octave.
+  for (let lag = minLag; lag < maxLag; lag++) {
+    if (difference[lag] >= .12) continue;
+    while (lag + 1 < maxLag && difference[lag + 1] < difference[lag]) lag++;
+    const left = difference[lag - 1], mid = difference[lag], right = difference[lag + 1];
+    const curvature = left - 2 * mid + right;
+    const shift = curvature ? Math.max(-.5, Math.min(.5, (left - right) / (2 * curvature))) : 0;
+    const frequency = rate / (lag + shift);
+    // Allow five cents of interpolation error at the advertised range edges.
+    const margin = 2 ** (5 / 1200);
+    return frequency >= 55 / margin && frequency <= 1400 * margin
+      ? Math.max(55, Math.min(1400, frequency)) : -1;
   }
-
-  let d = 0;
-  while (d + 1 < c.length && c[d] > c[d + 1]) d++;
-  let maxVal = -1, maxPos = -1;
-  for (let i = d; i < c.length; i++) {
-    if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
-  }
-  if (maxPos <= 0) return -1;
-
-  const x1 = c[maxPos - 1] ?? c[maxPos];
-  const x2 = c[maxPos];
-  const x3 = c[maxPos + 1] ?? c[maxPos];
-  const a = (x1 + x3 - 2 * x2) / 2;
-  const b = (x3 - x1) / 2;
-  const shift = a ? -b / (2 * a) : 0;
-  return sampleRate / (maxPos + shift);
+  return -1;
 }
 
 export function frequencyToNote(freq) {
@@ -53,4 +59,39 @@ export function tunerState(cents, tolerance = 5) {
   if (!Number.isFinite(cents)) return "waiting";
   if (Math.abs(cents) <= tolerance) return "in-tune";
   return cents < 0 ? "flat" : "sharp";
+}
+
+// Time is supplied by the caller, making stability and dropout behavior testable.
+export function createTunerTracker() {
+  let history = [], reading = null, candidate = null, count = 0, lastValid = -Infinity;
+  return {
+    update(frequency, now) {
+      if (!(frequency >= 55 && frequency <= 1400)) {
+        candidate = null; count = 0; history = [];
+        if (now - lastValid > 350) reading = null;
+        return reading;
+      }
+      const pitch = 69 + 12 * Math.log2(frequency / 440);
+      history.push(pitch); if (history.length > 3) history.shift();
+      const median = [...history].sort((a, b) => a - b)[Math.floor(history.length / 2)];
+      const note = Math.round(median);
+      if (!reading || note !== reading.note) {
+        count = candidate === note ? count + 1 : 1; candidate = note;
+        if (count < 3) {
+          if (now - lastValid > 350) reading = null;
+          return reading;
+        }
+        reading = { note, pitch: median, state: "waiting" };
+      } else {
+        candidate = null; count = 0;
+        reading = { ...reading, pitch: reading.pitch + .45 * (median - reading.pitch) };
+      }
+      const cents = Math.round((reading.pitch - reading.note) * 100);
+      const tolerance = reading.state === "in-tune" ? 7 : 4;
+      const state = tunerState(cents, tolerance);
+      lastValid = now;
+      reading = { ...reading, cents, state, frequency: 440 * 2 ** ((reading.pitch - 69) / 12) };
+      return reading;
+    }
+  };
 }

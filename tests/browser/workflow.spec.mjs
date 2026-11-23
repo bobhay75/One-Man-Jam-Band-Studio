@@ -122,7 +122,7 @@ test('editing during stem rendering exposes no partial or stale stem links',asyn
   await expect(page.locator('#renderStatus')).toContainText('Session changed');await expect(page.locator('#stemDownloads a')).toHaveCount(0);
 });
 
-for(const change of ['mixer','source','seed','project'])test(`${change} during render never revives a stale download`,async({page})=>{
+for(const change of ['mixer','source','seed','project'])test(`${change} is locked during render and the next edit invalidates its download`,async({page})=>{
   await prepareArrangement(page);const saved=await saveProject(page);
   await page.evaluate(()=>{
     const start=OfflineAudioContext.prototype.startRendering;
@@ -134,12 +134,17 @@ for(const change of ['mixer','source','seed','project'])test(`${change} during r
   });
   await page.locator('#renderBtn').click();
   await expect.poll(()=>page.evaluate(()=>typeof window.releaseRender)).toBe('function');
+  const locked={mixer:'[data-mix="sourceGain"]',source:'#audioFile',seed:'#seed',project:'#projectFile'};
+  await expect(page.locator(locked[change])).toBeDisabled();
+  await expect(page.locator('#downloadBtn')).toBeDisabled();
+  await page.evaluate(()=>window.releaseRender());
+  await expect(page.locator('#renderStatus')).toContainText('stereo WAV');
+  await expect(page.locator(locked[change])).toBeEnabled();
+  await expect(page.locator('#downloadBtn')).toBeEnabled();
   if(change==='mixer')await setRange(page,'[data-mix="sourceGain"]',.3);
   if(change==='source')await uploadAudio(page,'new-source.wav');
   if(change==='seed')await page.locator('#seed').fill('3');
   if(change==='project')await loadProject(page,saved.json);
-  await page.evaluate(()=>window.releaseRender());
-  await expect(page.locator('#renderStatus')).toContainText('Session changed');
   await expect(page.locator('#downloadBtn')).toBeDisabled();
   await expect(page.locator('#mixPlayer')).not.toHaveAttribute('src');
 });
@@ -236,4 +241,93 @@ test.describe('microphone paths',()=>{
     await expect(page.locator('#tunerStatus')).toHaveText('PLAY A NOTE');
     await page.evaluate(()=>window.testContext.close());
   });
+});
+
+test.describe('pending recording permission lifecycle',()=>{
+ test.use({expectedMicRequests:1});
+ for(const action of ['stop','pagehide'])test(action+' releases late microphone without starting a recorder',async({page})=>{
+  await uploadAudio(page);
+  await page.evaluate(()=>{
+   window.recordStarts=0;
+   const start=MediaRecorder.prototype.start;
+   MediaRecorder.prototype.start=function(...args){window.recordStarts++;return start.apply(this,args)};
+   navigator.mediaDevices.getUserMedia=()=>{
+    window.__acceptanceMicRequests++;
+    return new Promise(resolve=>window.resolveRecordingPermission=()=>{
+     window.pendingMicContext=new AudioContext();
+     window.pendingMicStream=window.pendingMicContext.createMediaStreamDestination().stream;
+     resolve(window.pendingMicStream);
+    });
+   };
+  });
+  await page.locator('#recordBtn').click();
+  await expect(page.locator('#stopRecordBtn')).toBeEnabled();
+  if(action==='pagehide')await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+  else await page.locator('#stopRecordBtn').click();
+  await expect(page.locator('#recordBtn')).toBeEnabled();
+  await page.evaluate(()=>window.resolveRecordingPermission());
+  await expect.poll(()=>page.evaluate(()=>window.pendingMicStream.getTracks().every(t=>t.readyState==='ended'))).toBe(true);
+  expect(await page.evaluate(()=>window.recordStarts)).toBe(0);
+  await expect(page.locator('#meta')).toContainText('acceptance-tone.wav');
+  await expect(page.locator('#stopRecordBtn')).toBeDisabled();
+  await page.evaluate(()=>window.pendingMicContext.close());
+ });
+});
+
+test('silent audio cannot generate a default backing band',async({page})=>{
+ const silent=wavFixture();silent.fill(0,44);
+ await page.locator('#audioFile').setInputFiles({name:'silent.wav',mimeType:'audio/wav',buffer:silent});
+ await expect(page.locator('#analyzeBtn')).toBeEnabled();await page.locator('#analyzeBtn').click();
+ await expect(page.locator('#sessionStatus')).toContainText('silent');
+ await expect(page.locator('#arrangeBtn')).toBeDisabled();await expect(page.locator('#renderBtn')).toBeDisabled();
+});
+
+test.describe('recording request ownership',()=>{
+ test.use({expectedMicRequests:2});
+ for(const outcome of ['resolve','reject'])test('old permission '+outcome+' cannot reset a newer request',async({page})=>{
+  await uploadAudio(page);
+  await page.evaluate(()=>{
+   window.recordRequests=[];window.micContexts=[];window.micStreams=[];window.recordStarts=0;
+   const start=MediaRecorder.prototype.start;
+   MediaRecorder.prototype.start=function(...args){window.recordStarts++;return start.apply(this,args)};
+   navigator.mediaDevices.getUserMedia=()=>{
+    window.__acceptanceMicRequests++;
+    return new Promise((resolve,reject)=>window.recordRequests.push({resolve:()=>{
+     const ctx=new AudioContext();window.micContexts.push(ctx);
+     const stream=ctx.createMediaStreamDestination().stream;window.micStreams.push(stream);resolve(stream);
+    },reject:()=>reject(new DOMException('Denied','NotAllowedError'))}));
+   };
+  });
+  await page.locator('#recordBtn').click();await page.locator('#stopRecordBtn').click();
+  await page.locator('#recordBtn').click();
+  await page.evaluate(outcome=>window.recordRequests[0][outcome](),outcome);
+  await expect(page.locator('#recordBtn')).toBeDisabled();
+  await expect(page.locator('#stopRecordBtn')).toBeEnabled();
+  await expect(page.locator('#sessionStatus')).toContainText('Waiting for microphone permission');
+  if(outcome==='resolve')await expect.poll(()=>page.evaluate(()=>window.micStreams[0].getTracks().every(t=>t.readyState==='ended'))).toBe(true);
+  expect(await page.evaluate(()=>window.recordStarts)).toBe(0);
+  await page.evaluate(()=>window.recordRequests[1].resolve());
+  await expect(page.locator('#sessionStatus')).toContainText('Recording Original');
+  expect(await page.evaluate(()=>window.recordStarts)).toBe(1);
+  await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+  await expect.poll(()=>page.evaluate(()=>window.micStreams.every(s=>s.getTracks().every(t=>t.readyState==='ended')))).toBe(true);
+  await expect(page.locator('#meta')).toContainText('acceptance-tone.wav');
+  await page.evaluate(()=>Promise.all(window.micContexts.map(c=>c.close())));
+ });
+});
+
+
+test('reviewed chords enable and generate backing after uncertain non-silent analysis',async({page})=>{
+ const uncertain=wavFixture();
+ for(let i=44;i<uncertain.length;i+=2)uncertain.writeInt16LE(3277,i);
+ await page.locator('#audioFile').setInputFiles({name:'uncertain.wav',mimeType:'audio/wav',buffer:uncertain});
+ await expect(page.locator('#analyzeBtn')).toBeEnabled();await page.locator('#analyzeBtn').click();
+ await expect(page.locator('#analysis')).toContainText('low-confidence');
+ await expect(page.locator('#arrangeBtn')).toBeDisabled();
+ await page.getByText('Edit detected chord timeline',{exact:true}).click();
+ await page.locator('#chordEditor').fill(JSON.stringify([{startSec:0,endSec:2,chord:'C',confidence:1,root:0,mode:'major'}]));
+ await page.locator('#applyChordsBtn').click();
+ await expect(page.locator('#arrangeBtn')).toBeEnabled();await page.locator('#arrangeBtn').click();
+ await expect(page.locator('#renderBtn')).toBeEnabled();
+ await expect(page.locator('#sessionStatus')).toContainText('Band ready');
 });
