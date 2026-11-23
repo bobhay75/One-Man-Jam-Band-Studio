@@ -122,7 +122,7 @@ test('editing during stem rendering exposes no partial or stale stem links',asyn
   await expect(page.locator('#renderStatus')).toContainText('Session changed');await expect(page.locator('#stemDownloads a')).toHaveCount(0);
 });
 
-for(const change of ['mixer','source','seed','project'])test(`${change} during render never revives a stale download`,async({page})=>{
+for(const change of ['mixer','source','seed','project'])test(`${change} is locked during render and the next edit invalidates its download`,async({page})=>{
   await prepareArrangement(page);const saved=await saveProject(page);
   await page.evaluate(()=>{
     const start=OfflineAudioContext.prototype.startRendering;
@@ -134,12 +134,17 @@ for(const change of ['mixer','source','seed','project'])test(`${change} during r
   });
   await page.locator('#renderBtn').click();
   await expect.poll(()=>page.evaluate(()=>typeof window.releaseRender)).toBe('function');
+  const locked={mixer:'[data-mix="sourceGain"]',source:'#audioFile',seed:'#seed',project:'#projectFile'};
+  await expect(page.locator(locked[change])).toBeDisabled();
+  await expect(page.locator('#downloadBtn')).toBeDisabled();
+  await page.evaluate(()=>window.releaseRender());
+  await expect(page.locator('#renderStatus')).toContainText('stereo WAV');
+  await expect(page.locator(locked[change])).toBeEnabled();
+  await expect(page.locator('#downloadBtn')).toBeEnabled();
   if(change==='mixer')await setRange(page,'[data-mix="sourceGain"]',.3);
   if(change==='source')await uploadAudio(page,'new-source.wav');
   if(change==='seed')await page.locator('#seed').fill('3');
   if(change==='project')await loadProject(page,saved.json);
-  await page.evaluate(()=>window.releaseRender());
-  await expect(page.locator('#renderStatus')).toContainText('Session changed');
   await expect(page.locator('#downloadBtn')).toBeDisabled();
   await expect(page.locator('#mixPlayer')).not.toHaveAttribute('src');
 });

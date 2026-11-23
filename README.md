@@ -7,6 +7,7 @@ Local-first music production studio for turning raw guitar performances into com
 - Import or record audio in the browser
 - Visible native file chooser plus an unrestricted all-files fallback and inline import errors
 - Eight working tracks: original, drums, bass, lead, and four extra takes with import/record destination, preview, gain, signed start offset, removal and original-audio saving
+- Integrated VocalLift for Original, Vocal and Harmony: local tone/dynamics processing, four presets, six controls, original/enhanced comparison, explicit mix routing, bypass and enhanced WAV download
 - Local tempo, key and chord-region inference
 - Editable chord timeline
 - Drag-to-edit waveform exclusions plus manual no-accompaniment regions
@@ -39,6 +40,14 @@ Local-first music production studio for turning raw guitar performances into com
 The local procedural band remains the zero-service default. The optional ACE-Step adapter talks to an owner-selected ACE-Step 1.5 REST API and uses the **base model's Lego task** to add one instrument at a time. Generated WAVs remain runtime assets and are not embedded in the project file.
 
 See `docs/ACE_STEP.md` for setup and security details.
+
+## VocalLift
+
+The existing private Studio Site's VocalLift addition is now included in this repository. Select Original, Vocal or Harmony, choose a sound, and enhance the take. Compare both versions before choosing **Use enhanced in mix**. Original recordings remain untouched. Download the enhanced WAV before closing the page; the project settings file does not embed audio or restore VocalLift results.
+
+In an empty session, **Try synthetic demo** creates a nine-second guitar/vowel example without microphone access or personal recordings. VocalLift uses browser audio processing, with no hosted AI call. It shapes tone and dynamics; it does not correct pitch or separate vocals from a mixed recording. See [the VocalLift guide](docs/vocal-lift.md).
+
+Version 0.5.2 fixes recording destinations: the VocalLift Record control follows its selected Original/Vocal/Harmony track, Original recording works in an empty session, and **Record Guitar** always resets the destination to Original. Editing controls are locked while processing; pending render snapshots remain protected against stale downloads.
 
 ## Sound-quality boundary
 The built-in band is a musical procedural renderer, not a claim of session-player realism. The optional neural provider is the path for higher-fidelity generation while preserving the same waveform editor, arrangement, mixer, mastering, stem export, and project model.
@@ -76,6 +85,8 @@ npm run verify
 
 `npm run verify` runs portable syntax checks, Node tests, and browser acceptance on desktop and Android-sized Chromium viewports. `npm run test:browser` runs only the browser suite. Tests use generated audio, actual chooser activation and Web Audio/MediaRecorder APIs, synthetic microphone streams, and intercepted neural requests; no physical microphone, service or credentials are required. Revision-checked render snapshots prevent mix/stem downloads from becoming stale while work is still in progress.
 
-See [the acceptance checklist](docs/BROWSER_ACCEPTANCE.md) for coverage, stale-download regression checks, and the remaining physical-device checks. Emulated mobile results do not close the Chromebook/Android production gate. The build remains undeployed.
+The suite includes VocalLift processing/mix integration, comparison and WAV download, original preservation, selected recording destinations, and the synthetic demo. The checked-in harness uses synthetic audio and does not contact a service. Forty-two numerical tests cover the baseline and VocalLift engine.
 
-See [the workflow audit](docs/STUDIO_AUDIT.md) for the inspected PR #9/#10 baseline, defects repaired and release disposition. **HOLD** release pending physical-device and listening acceptance; production deployment requires Robert's explicit approval.
+See [the acceptance checklist](docs/BROWSER_ACCEPTANCE.md) for coverage, stale-download regression checks, and the remaining physical-device checks. Emulated mobile results do not close the Chromebook/Android production gate. The existing owner-only preview is [One-Man Jam Band Studio](https://one-man-jam-band-studio.thebobsomest1.chatgpt.site); its deployed version is managed separately from this repository.
+
+See [the workflow audit](docs/STUDIO_AUDIT.md) for the inspected PR #9/#10 baseline, defects repaired and release disposition. Physical-device microphone/latency and listening acceptance remain necessary before making commercial sound-quality claims.

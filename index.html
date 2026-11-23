@@ -17,7 +17,7 @@
     <div class="eyebrow">START HERE</div>
     <h2>Make a song in four moves</h2>
     <div class="workflow-steps"><div><b>1</b><span>Record or choose a guitar track</span></div><div><b>2</b><span>Check the take</span></div><div><b>3</b><span>Add a tempo-locked band</span></div><div><b>4</b><span>Render and listen</span></div></div>
-    <div class="row start-actions"><button id="quickRecordBtn" class="primary" type="button">Record Guitar</button><div id="quickImportBtn" class="file-picker"><label for="audioFile">Choose Audio File</label><input id="audioFile" type="file" aria-describedby="fileHelp" /></div><button id="getDriveAudio" type="button" aria-controls="audioLinkForm">Get audio from Google Drive</button><button id="quickPlayBtn" type="button" disabled>Play Take</button></div>
+    <div class="row start-actions"><button id="quickRecordBtn" class="primary" type="button">Record Guitar</button><div id="quickImportBtn" class="file-picker"><label for="audioFile">Choose Audio File</label><input id="audioFile" type="file" aria-describedby="fileHelp" /></div><button id="getDriveAudio" type="button" aria-controls="audioLinkForm">Get audio from Google Drive</button><button id="quickPlayBtn" type="button" disabled>Play Take</button><a class="button vocal-jump" href="#vocalLift">Polish your vocals</a></div>
     <div id="sessionStatus" class="status" role="status" aria-live="polite" aria-atomic="true">Choose or record an original take to begin.</div>
     <p id="fileHelp" class="muted small">WAV, MP3, M4A, Ogg, WebM or FLAC; support depends on your browser. If a recording is missing or grayed out, use Browse all files below. Files stay on this device.</p>
     <form id="audioLinkForm" class="stack" novalidate>
@@ -62,6 +62,41 @@
     </div>
   </section>
 
+  <section class="panel vocal-panel" id="vocalLift" aria-labelledby="vocalHeading">
+    <div class="eyebrow">YOUR VOICE, IN THE BAND</div>
+    <div class="vocal-heading"><div><h2 id="vocalHeading">VocalLift</h2><p class="muted">Give a vocal more warmth, clarity, and balance. Compare the take, then bring your favorite sound into the studio mix.</p></div><span class="vocal-local">Processed on this device</span></div>
+    <div class="vocal-input-row">
+      <label for="vocalTarget">Voice track<select id="vocalTarget"><option value="track6">Track 6 — Vocal</option><option value="track7">Track 7 — Harmony</option><option value="source">Track 1 — Guitar / Original</option></select></label>
+      <button id="vocalChooseBtn" type="button">Choose Vocal audio</button><button id="vocalRecordBtn" type="button">Record Vocal</button><button id="vocalDemoBtn" type="button">Try synthetic demo</button>
+    </div>
+    <p id="vocalTrackInfo" class="muted small">Load your guitar/original take first, then add a Vocal or Harmony track.</p>
+    <div class="vocal-presets" aria-label="Vocal sound presets">
+      <button type="button" data-vocal-preset="natural" aria-pressed="false"><strong>Natural</strong><span>A gentle, clear lift</span></button>
+      <button type="button" data-vocal-preset="spoken" aria-pressed="false"><strong>Spoken word</strong><span>Even, present speech</span></button>
+      <button type="button" data-vocal-preset="singing" aria-pressed="true"><strong>Singing</strong><span>Fuller tone and room</span></button>
+      <button type="button" data-vocal-preset="intimate" aria-pressed="false"><strong>Warm & intimate</strong><span>Soft and close</span></button>
+    </div>
+    <div class="vocal-sliders">
+      <label>Cleanup <output id="vocalCleanupValue">18</output><input aria-label="Vocal cleanup" id="vocalCleanup" data-vocal-setting="cleanup" type="range" min="0" max="100" step="1" value="18"><span>Rumble and quieter background sound</span></label>
+      <label>Warmth <output id="vocalWarmthValue">50</output><input aria-label="Vocal warmth" id="vocalWarmth" data-vocal-setting="warmth" type="range" min="0" max="100" step="1" value="50"><span>Body in the lower voice</span></label>
+      <label>Clarity <output id="vocalClarityValue">40</output><input aria-label="Vocal clarity" id="vocalClarity" data-vocal-setting="clarity" type="range" min="0" max="100" step="1" value="40"><span>Presence and definition</span></label>
+      <label>Level <output id="vocalLevelValue">52</output><input aria-label="Vocal level" id="vocalLevel" data-vocal-setting="level" type="range" min="0" max="100" step="1" value="52"><span>Smoother loud and quiet phrases</span></label>
+      <label>Space <output id="vocalSpaceValue">32</output><input aria-label="Vocal space" id="vocalSpace" data-vocal-setting="space" type="range" min="0" max="100" step="1" value="32"><span>A little room around your voice</span></label>
+      <label>Effect mix <output id="vocalMixValue">100</output><input aria-label="Vocal mix" id="vocalMix" data-vocal-setting="mix" type="range" min="0" max="100" step="1" value="100"><span>0 keeps the original; 100 is full effect</span></label>
+    </div>
+    <div class="row vocal-actions"><button id="vocalEnhanceBtn" type="button" class="primary" disabled>Enhance voice</button><button id="vocalApplyBtn" type="button" disabled>Use enhanced in mix</button><button id="vocalBypassBtn" type="button" disabled>Restore original in mix</button><button id="vocalDownloadBtn" type="button" disabled>Download enhanced WAV</button></div>
+    <div id="vocalProgressWrap" class="vocal-progress" hidden><progress id="vocalProgress" max="1" value="0" aria-label="Vocal enhancement progress"></progress><span id="vocalProgressText">Preparing your vocal…</span></div>
+    <div id="vocalStatus" class="status" role="status" aria-live="polite">The original track is preserved. Add a vocal to get started.</div>
+    <p id="vocalFeedback" class="vocal-feedback" role="status" aria-live="polite" hidden></p>
+    <div class="vocal-preview">
+      <div class="row"><strong>Compare your take</strong><button id="vocalOriginalBtn" type="button" aria-pressed="true" disabled>Original</button><button id="vocalEnhancedBtn" type="button" aria-pressed="false" disabled>Enhanced</button><span id="vocalPreviewLabel" class="muted small">Original preview</span></div>
+      <audio id="vocalPreviewPlayer" controls aria-label="Selected vocal comparison preview"></audio>
+      <ul id="vocalChanges" class="vocal-changes" hidden></ul>
+    </div>
+    <p class="vocal-limit">Best with a solo voice. Guitar or music in the same file is processed too. This edition shapes tone and dynamics; it does not correct pitch or separate vocals. VocalLift supports mono/stereo takes up to 5 minutes; use shorter takes on devices with limited memory.</p>
+    <p class="vocal-save-note"><strong>Keep your enhanced take:</strong> VocalLift results and settings last for this page session. Download the enhanced WAV before closing or loading a project. Project files do not contain the enhancement or its audio; you can reimport the downloaded WAV later.</p>
+  </section>
+
   <section class="panel">
     <h2>Track + Project</h2>
     <div class="stack">
@@ -73,7 +108,7 @@
     <button id="stopRecordBtn" disabled>Stop</button>
     <button id="saveProjectBtn">Save Project</button>
     <button id="saveOriginalBtn" disabled>Save Original Audio</button>
-    <p class="muted small">Save the original recording as well as the project. Project files contain settings only; reselect each take after reopening.</p>
+    <p class="muted small">Save the original recording as well as the project. Project files contain settings only; reselect each take after reopening. VocalLift is session-only: download each enhanced vocal WAV separately to keep that sound.</p>
     <audio id="player" controls aria-label="Original take preview"></audio>
     <div id="meta"></div>
     <h3>Waveform / Exclusion Editor</h3>
